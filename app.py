@@ -109,7 +109,7 @@ def fix_arabic(text):
     except:
         return str(text)
 
-# دالة توليد ملف PDF يدعم العربية
+# دالة توليد ملف PDF يدعم العربية بشكل كامل
 def generate_pdf_report(df_data, date_str):
     font_path = "DejaVuSans.ttf"
     if not os.path.exists(font_path):
@@ -123,19 +123,28 @@ def generate_pdf_report(df_data, date_str):
     pdf.add_page()
     
     if os.path.exists(font_path):
-        pdf.add_font("DejaVu", "", font_path)
+        # تسجيل الخط بالشكل الصحيح لمكتبة fpdf2
+        pdf.add_font("DejaVu", fname=font_path)
         pdf.set_font("DejaVu", size=14)
     else:
         pdf.set_font("Arial", size=14)
     
     # ترويسة التقرير
     pdf.cell(190, 10, txt=fix_arabic("شركة سويس للصرافة - تقرير التدقيق الداخلي"), ln=True, align='C')
-    pdf.set_font("DejaVu", size=11) if os.path.exists(font_path) else pdf.set_font("Arial", size=11)
+    
+    if os.path.exists(font_path):
+        pdf.set_font("DejaVu", size=11)
+    else:
+        pdf.set_font("Arial", size=11)
     pdf.cell(190, 8, txt=fix_arabic(f"تقرير الحالات غير المطابقة - التاريخ: {date_str}"), ln=True, align='C')
     pdf.ln(8)
     
     # رأس جدول التقرير
-    pdf.set_font("DejaVu", size=9) if os.path.exists(font_path) else pdf.set_font("Arial", size=9)
+    if os.path.exists(font_path):
+        pdf.set_font("DejaVu", size=9)
+    else:
+        pdf.set_font("Arial", size=9)
+        
     pdf.cell(20, 8, fix_arabic("رقم الفرع"), 1, 0, 'C')
     pdf.cell(50, 8, fix_arabic("اسم الفرع"), 1, 0, 'C')
     pdf.cell(25, 8, fix_arabic("رقم الصندوق"), 1, 0, 'C')
@@ -328,7 +337,7 @@ def main_app():
             st.success(f"⚡ يتم حفظ التعديلات تلقائياً لتاريخ ({date_str}) بشكل فوري!")
 
             st.write("---")
-            if st.button("🚨 استخراج تقرير الحالات غير المطابقة ليوم " + date_str, use_container_width=True):
+            if st.button("🚨 استخراج تقرير الحالات غير المطابقة ليوم " + date_str, use_keyword=True, use_container_width=True) if hasattr(st, 'button') else st.button("🚨 استخراج تقرير الحالات غير المطابقة ليوم " + date_str, use_container_width=True):
                 df_mismatches = edited_df[edited_df["الحالة"] == "غير مطابق"]
                 if df_mismatches.empty:
                     st.info("🎉 لا توجد أي حالات (غير مطابق) مسجلة لهذا التاريخ.")
