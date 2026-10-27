@@ -148,7 +148,6 @@ def main_app():
         if df_emp.empty:
             st.warning("⚠️ تنبيه: يرجى أولاً إدخال بيانات الموظفين والصناديق من قائمة (قاعدة بيانات الموظفين والصناديق).")
         else:
-            # جلب الحركات المحفوظة خصيصاً للتاريخ المختار فقط
             df_saved = pd.read_sql_query("SELECT * FROM daily_audit WHERE audit_date = ?", conn, params=(date_str,))
             working_df = df_emp.copy()
             
@@ -199,7 +198,6 @@ def main_app():
                 key=f"audit_editor_{date_str}"
             )
 
-            # الحفظ التلقائي المرتبط بالتاريخ المختار فقط
             current_time_str = datetime.now().strftime("%I:%M:%S %p")
             c = conn.cursor()
             for index, row in edited_df.iterrows():
@@ -227,17 +225,17 @@ def main_app():
 
     elif menu == "📁 المطابقات الشهرية والترحيل":
         st.subheader("📁 أرشيف المطابقات الشهرية والترحيل اليومي")
-        st.caption("من هنا يمكنك ترحيل حركات وتدقيق اليوم المحدد إلى قاعدة بيانات المطابقات الشهرية[cite: 18].")
+        st.caption("من هنا يمكنك ترحيل حركات وتدقيق التاريخ المحدد إلى قاعدة بيانات المطابقات الشهرية.")
         
-        target_date = st.date_input("تاريخ اليوم المراد ترحيله", datetime.now(), key="archive_date")
+        target_date = st.date_input("تاريخ اليوم المراد ترحيله وعرضه", datetime.now(), key="archive_date")
         target_date_str = str(target_date)
         
         col_btn1, col_btn2 = st.columns([1, 2])
         with col_btn1:
-            if st.button("📥 تنفيذ ترحيل حركات اليوم", use_container_width=True):
+            if st.button("📥 تنفيذ ترحيل حركات اليوم المحدد", use_container_width=True):
                 df_day = pd.read_sql_query("SELECT * FROM daily_audit WHERE audit_date = ?", conn, params=(target_date_str,))
                 if df_day.empty:
-                    st.warning(f"⚠️ لا توجد حركات مسجلة لتاريخ ({target_date_str}) ليتم ترحيلها[cite: 18].")
+                    st.warning(f"⚠️ لا توجد حركات مسجلة لتاريخ ({target_date_str}) ليتم ترحيلها.")
                 else:
                     c = conn.cursor()
                     for _, r in df_day.iterrows():
@@ -249,13 +247,22 @@ def main_app():
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ''', (r["audit_date"], r["branch_no"], r["branch_name"], r["box_no"], r["employee_name"], r["excess"], r["shortage"], r["status"], r["notes"], r["audit_time"]))
                     conn.commit()
-                    st.success(f"✅ تم ترحيل حركات تاريخ ({target_date_str}) إلى أرشيف المطابقات الشهرية بنجاح تام[cite: 18]!")
+                    st.success(f"✅ تم ترحيل حركات تاريخ ({target_date_str}) إلى أرشيف المطابقات الشهرية بنجاح تام!")
+                    st.rerun()
         
         st.write("---")
         st.markdown("##### 📊 جدول أرشيف المطابقات الشهرية والترحيلات المسجلة")
-        df_monthly = pd.read_sql_query("SELECT * FROM monthly_audit_archive", conn)
+        
+        # خيار لتصفية الأرشيف حسب التاريخ المختار أو عرضه كاملاً
+        archive_view_mode = st.radio("طريقة عرض الأرشيف:", ["عرض السجلات الخاصة بالتاريخ المختار أعلاه فقط", "عرض كافة سجلات الأرشيف الشهري"], horizontal=True)
+        
+        if archive_view_mode == "عرض السجلات الخاصة بالتاريخ المختار أعلاه فقط":
+            df_monthly = pd.read_sql_query("SELECT * FROM monthly_audit_archive WHERE audit_date = ?", conn, params=(target_date_str,))
+        else:
+            df_monthly = pd.read_sql_query("SELECT * FROM monthly_audit_archive", conn)
+
         if df_monthly.empty:
-            st.info("لا توجد سجلات مرحلة في الأرشيف الشهري حتى الآن.")
+            st.info(f"لا توجد سجلات مرحلة مطابقة لتاريخ ({target_date_str}) في الأرشيف الشهري.")
         else:
             st.dataframe(df_monthly.rename(columns={
                 "audit_date": "التاريخ",
