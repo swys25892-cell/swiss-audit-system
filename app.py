@@ -3,6 +3,10 @@ import pandas as pd
 import sqlite3
 from datetime import datetime
 from fpdf import FPDF
+import os
+import urllib.request
+import arabic_reshaper
+from bidi.algorithm import get_display
 
 # إعدادات الصفحة
 st.set_page_config(
@@ -94,43 +98,81 @@ init_db()
 def get_db_connection():
     return sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
 
-# دالة توليد ملف PDF متوافقة ومستقرة تماماً مع أحدث إصدارات fpdf2
+# تجهيز النص العربي للعرض الصحيح في PDF
+def ar(text):
+    if not text:
+        return ""
+    try:
+        text = str(text)
+        reshaped = arabic_reshaper.reshape(text)
+        return get_display(reshaped)
+    except:
+        return str(text)
+
+# دالة توليد تقرير PDF يدعم العربية بشكل كامل
 def generate_pdf_report(df_data, date_str):
+    font_path = "Amiri-Regular.ttf"
+    if not os.path.exists(font_path):
+        try:
+            # تحميل خط Amiri مجاناً لتثبيته في السحابة
+            url = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
+            urllib.request.urlretrieve(url, font_path)
+        except:
+            pass
+
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
     
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(190, 10, txt="Swiss Exchange Company - Internal Audit Report", ln=True, align='C')
+    if os.path.exists(font_path):
+        pdf.add_font("Amiri", fname=font_path)
+        pdf.set_font("Amiri", size=16)
+    else:
+        pdf.set_font("Arial", size=16)
     
-    pdf.set_font("Arial", 'B', 11)
-    pdf.cell(190, 8, txt=f"Non-Compliance Report - Date: {date_str}", ln=True, align='C')
+    # ترويسة التقرير
+    pdf.cell(190, 10, text=ar("شركة سويس للصرافة - تقرير التدقيق الداخلي"), new_x="LMARGIN", new_y="NEXT", align='C')
+    
+    if os.path.exists(font_path):
+        pdf.set_font("Amiri", size=12)
+    else:
+        pdf.set_font("Arial", size=12)
+        
+    pdf.cell(190, 8, text=ar(f"تقرير الحالات غير المطابقة - التاريخ: {date_str}"), new_x="LMARGIN", new_y="NEXT", align='C')
     pdf.ln(8)
     
-    pdf.set_font("Arial", 'B', 9)
-    pdf.cell(20, 8, "Branch No", 1, 0, 'C')
-    pdf.cell(50, 8, "Branch Name", 1, 0, 'C')
-    pdf.cell(25, 8, "Box No", 1, 0, 'C')
-    pdf.cell(45, 8, "Employee Name", 1, 0, 'C')
-    pdf.cell(20, 8, "Excess", 1, 0, 'C')
-    pdf.cell(30, 8, "Time", 1, 1, 'C')
+    # رأس الجدول (من اليمين لليسار)
+    if os.path.exists(font_path):
+        pdf.set_font("Amiri", size=10)
+    else:
+        pdf.set_font("Arial", size=10)
+        
+    headers = [("الوقت", 30), ("الزيادة", 20), ("اسم الموظف", 45), ("رقم الصندوق", 25), ("اسم الفرع", 50), ("رقم الفرع", 20)]
+    for i, (h, w) in enumerate(headers):
+        last = i == len(headers) - 1
+        pdf.cell(w, 8, ar(h), border=1, align='C',
+                 new_x="LMARGIN" if last else "RIGHT",
+                 new_y="NEXT" if last else "TOP")
     
-    pdf.set_font("Arial", '', 8)
+    if os.path.exists(font_path):
+        pdf.set_font("Amiri", size=9)
+    else:
+        pdf.set_font("Arial", size=9)
+        
     for _, row in df_data.iterrows():
-        b_no = str(row["branch_no"]).encode('latin-1', 'replace').decode('latin-1')
-        b_name = str(row["branch_name"]).encode('latin-1', 'replace').decode('latin-1')
-        box = str(row["box_no"]).encode('latin-1', 'replace').decode('latin-1')
-        emp = str(row["employee_name"]).encode('latin-1', 'replace').decode('latin-1')
-        excess = str(row["الزيادة"]).encode('latin-1', 'replace').decode('latin-1')
-        t_time = str(row["الوقت"]).encode('latin-1', 'replace').decode('latin-1')
-        
-        pdf.cell(20, 8, b_no, 1, 0, 'C')
-        pdf.cell(50, 8, b_name, 1, 0, 'C')
-        pdf.cell(25, 8, box, 1, 0, 'C')
-        pdf.cell(45, 8, emp, 1, 0, 'C')
-        pdf.cell(20, 8, excess, 1, 0, 'C')
-        pdf.cell(30, 8, t_time, 1, 1, 'C')
-        
-    # إرجاع الملف بصيغة بايت متوافقة مع fpdf2 الحديثة
+        values = [
+            (str(row["الوقت"]), 30), 
+            (str(row["الزيادة"]), 20), 
+            (str(row["employee_name"]), 45),
+            (str(row["box_no"]), 25), 
+            (str(row["branch_name"]), 50), 
+            (str(row["branch_no"]), 20)
+        ]
+        for i, (v, w) in enumerate(values):
+            last = i == len(values) - 1
+            pdf.cell(w, 8, ar(v), border=1, align='C',
+                     new_x="LMARGIN" if last else "RIGHT",
+                     new_y="NEXT" if last else "TOP")
+    
     return bytes(pdf.output())
 
 # حالة تسجيل الدخول
