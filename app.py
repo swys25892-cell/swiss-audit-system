@@ -145,13 +145,20 @@ def main_app():
         st.markdown(f"🔒 **الصلاحية:** `{st.session_state.user_role}`")
         st.write("---")
     
-    menu = st.sidebar.selectbox("قائمة التنقل الرئيسي", [
+    # القائمة المنسدلة تشمل خيار تغيير كلمة المرور للمستخدم الحالي
+    menu_options = [
         "📋 لوحة المتابعة والتدقيق اليومي", 
         "📁 المطابقات الشهرية والترحيل",
         "👥 قاعدة بيانات الموظفين والصناديق",
-        "🔑 إدارة المستخدمين والصلاحيات",
+        "🔐 تغيير كلمة المرور الشخصية",
         "📊 المؤشرات والتقارير الإحصائية"
-    ])
+    ]
+    
+    # إضافة صفحة إدارة المستخدمين للمشرف الرئيسي فقط
+    if st.session_state.user_role == "مشرف رئيسي":
+        menu_options.insert(3, "🔑 إدارة المستخدمين والصلاحيات")
+
+    menu = st.sidebar.selectbox("قائمة التنقل الرئيسي", menu_options)
     
     st.sidebar.write("---")
     if st.sidebar.button("تسجيل الخروج", use_container_width=True):
@@ -353,6 +360,36 @@ def main_app():
                     "branch_no": "رقم الفرع"
                 }), use_container_width=True)
 
+    elif menu == "🔐 تغيير كلمة المرور الشخصية":
+        st.subheader("🔐 تغيير كلمة المرور الخاصة بحسابك")
+        st.caption(f"أنت تقوم بتغيير كلمة المرور الخاصة بالمستخدم الحالي: `{st.session_state.username}`")
+        
+        col_p1, col_p2 = st.columns([1, 1])
+        with col_p1:
+            with st.form("change_my_pass_form"):
+                old_pass_input = st.text_input("كلمة المرور الحالية", type="password")
+                new_pass_input = st.text_input("كلمة المرور الجديدة", type="password")
+                confirm_pass_input = st.text_input("تأكيد كلمة المرور الجديدة", type="password")
+                
+                change_btn = st.form_submit_button("تحديث كلمة المرور", use_container_width=True)
+                
+                if change_btn:
+                    if not old_pass_input or not new_pass_input or not confirm_pass_input:
+                        st.error("يرجى ملء كافة الحقول المطلوبة.")
+                    elif new_pass_input != confirm_pass_input:
+                        st.error("كلمة المرور الجديدة وتأكيدها غير متطابقتين.")
+                    else:
+                        c = conn.cursor()
+                        c.execute("SELECT password FROM users WHERE username = ?", (st.session_state.username,))
+                        current_db_pass = c.fetchone()[0]
+                        
+                        if current_db_pass != old_pass_input.strip():
+                            st.error("كلمة المرور الحالية غير صحيحة.")
+                        else:
+                            c.execute("UPDATE users SET password = ? WHERE username = ?", (new_pass_input.strip(), st.session_state.username))
+                            conn.commit()
+                            st.success("✅ تم تغيير كلمة المرور بنجاح! يرجى استخدامها عند تسجيل الدخول القادم.")
+
     elif menu == "🔑 إدارة المستخدمين والصلاحيات":
         st.subheader("🔑 إدارة حسابات المدققين وصلاحيات الدخول")
         st.caption("إضافة حسابات جديدة، مراجعة كلمات المرور للموظفين، وتعديلها أو حذفها.")
@@ -433,7 +470,7 @@ def main_app():
 
     elif menu == "📊 المؤشرات والتقارير الإحصائية":
         st.subheader("📊 المؤشرات والتقارير العامة للتدقيق")
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3 = sub_cols = st.columns(3)
         df_all = pd.read_sql_query("SELECT * FROM employees", conn)
         total_boxes = len(df_all)
         c1.metric("إجمالي الصناديق المسجلة", total_boxes)
@@ -444,6 +481,6 @@ def main_app():
     conn.close()
 
 if not st.session_state.logged_in:
-    login_screen()
+    login_session_screen = login_screen()
 else:
     main_app()
