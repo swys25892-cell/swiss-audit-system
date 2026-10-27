@@ -15,7 +15,7 @@ def init_db():
     conn = sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
     c = conn.cursor()
     
-    # جدول الحركات اليومية مع منع تكرار نفس الصندوق في نفس اليوم
+    # جدول الحركات اليومية
     c.execute('''
         CREATE TABLE IF NOT EXISTS daily_audit (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,8 +28,7 @@ def init_db():
             shortage REAL,
             status TEXT,
             notes TEXT,
-            audit_time TEXT,
-            UNIQUE(audit_date, box_no)
+            audit_time TEXT
         )
     ''')
     
@@ -131,7 +130,7 @@ def main_app():
         if df_emp.empty:
             st.warning("⚠️ تنبيه: يرجى أولاً إدخال بيانات الموظفين والصناديق من قائمة (قاعدة بيانات الموظفين والصناديق).")
         else:
-            # تنظيف أي تكرارات قديمة مسبقاً في قاعدة البيانات لمنع ظهور الموظف مرتين
+            # تنظيف أي تكرارات قديمة موجودة في الجدول سابقاً
             c_clean = conn.cursor()
             c_clean.execute('''
                 DELETE FROM daily_audit 
@@ -199,34 +198,52 @@ def main_app():
                 if submit_audit:
                     current_time_str = datetime.now().strftime("%I:%M:%S %p")
                     c = conn.cursor()
+                    
                     for index, row in edited_df.iterrows():
-                        c.execute('''
-                            INSERT INTO daily_audit (audit_date, branch_no, branch_name, box_no, employee_name, excess, shortage, status, notes, audit_time)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            ON CONFLICT(audit_date, box_no) DO UPDATE SET
-                                excess = excluded.excess,
-                                shortage = excluded.shortage,
-                                status = excluded.status,
-                                notes = excluded.notes,
-                                audit_time = CASE 
-                                    WHEN daily_audit.status != excluded.status OR daily_audit.audit_time IS NULL OR daily_audit.audit_time = '' 
-                                    THEN ? 
-                                    ELSE daily_audit.audit_time 
-                                END
-                        ''', (
-                            date_str, 
-                            str(row["branch_no"]), 
-                            str(row["branch_name"]), 
-                            str(row["box_no"]), 
-                            str(row["employee_name"]), 
-                            float(row["الزيادة"]), 
-                            float(row["النقص"]), 
-                            str(row["الحالة"]), 
-                            str(row["الملاحظات"]),
-                            current_time_str
-                        ))
+                        box = str(row["box_no"])
+                        # التأكد أولاً هل يوجد سجل سابق للصندوق في هذا اليوم
+                        c.execute("SELECT id, audit_time, status FROM daily_audit WHERE audit_date = ? AND box_no = ?", (date_str, box))
+                        existing_rec = c.fetchone()
+                        
+                        if existing_rec:
+                            # تحديث السجل الموجود
+                            old_time = existing_rec[1]
+                            old_status = existing_rec[2]
+                            # إذا تغيرت الحالة أو كان الوقت فارغاً، نضع الوقت الحالي
+                            new_time = current_time_str if (old_status != str(row["الحالة"]) or not old_time) else old_time
+                            
+                            c.execute('''
+                                UPDATE daily_audit 
+                                SET excess = ?, shortage = ?, status = ?, notes = ?, audit_time = ?
+                                WHERE audit_date = ? AND box_no = ?
+                            ''', (
+                                float(row["الزيادة"]), 
+                                float(row["النقص"]), 
+                                str(row["الحالة"]), 
+                                str(row["الملاحظات"]), 
+                                new_time, 
+                                date_str, 
+                                box
+                            ))
+                        else:
+                            # إضافة سجل جديد
+                            c.execute('''
+                                INSERT INTO daily_audit (audit_date, branch_no, branch_name, box_no, employee_name, excess, shortage, status, notes, audit_time)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ''', (
+                                date_str, 
+                                str(row["branch_no"]), 
+                                str(row["branch_name"]), 
+                                box, 
+                                str(row["employee_name"]), 
+                                float(row["الزيادة"]), 
+                                float(row["النقص"]), 
+                                str(row["الحالة"]), 
+                                str(row["الملاحظات"]), 
+                                current_time_str
+                            ))
                     conn.commit()
-                    st.success("تم تحديث وحفظ سجلات التدقيق اليومية بنجاح تام دون أي تكرار!")
+                    st.success("تم حفظ وتحديث حركات التدقيق بنجاح تام وسرعة عالية!")
                     st.rerun()
 
     elif menu == "👥 قاعدة بيانات الموظفين والصناديق":
