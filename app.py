@@ -94,37 +94,43 @@ init_db()
 def get_db_connection():
     return sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
 
-# دالة توليد ملف PDF للحالات غير المطابقة
+# دالة توليد ملف PDF متوافقة مع النصوص لتجنب أخطاء الترميز
 def generate_pdf_report(df_data, date_str):
-    pdf = FPDF()
+    pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
     
-    # ترويسة التقرير
-    pdf.cell(200, 10, txt="Swiss Exchange Company - Internal Audit", ln=True, align='C')
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(200, 10, txt=f"Non-Compliance Audit Report - Date: {date_str}", ln=True, align='C')
-    pdf.ln(10)
+    # استخدام خط أساسي آمن وتجنب مشاكل التشفير بالترميز الآمن
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(190, 10, txt="Swiss Exchange Company - Internal Audit Report", ln=True, align='C')
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(190, 8, txt=f"Non-Compliance Report - Date: {date_str}", ln=True, align='C')
+    pdf.ln(8)
     
-    # جدول البيانات
-    pdf.set_font("Arial", 'B', 10)
-    pdf.cell(20, 10, "Branch No", 1, 0, 'C')
-    pdf.cell(40, 10, "Branch Name", 1, 0, 'C')
-    pdf.cell(25, 10, "Box No", 1, 0, 'C')
-    pdf.cell(45, 10, "Employee Name", 1, 0, 'C')
-    pdf.cell(20, 10, "Excess", 1, 0, 'C')
-    pdf.cell(20, 10, "Short", 1, 0, 'C')
-    pdf.cell(30, 10, "Time", 1, 1, 'C')
+    # رأس جدول التقرير
+    pdf.set_font("Arial", 'B', 9)
+    pdf.cell(20, 8, "Branch No", 1, 0, 'C')
+    pdf.cell(50, 8, "Branch Name", 1, 0, 'C')
+    pdf.cell(25, 8, "Box No", 1, 0, 'C')
+    pdf.cell(45, 8, "Employee Name", 1, 0, 'C')
+    pdf.cell(20, 8, "Excess", 1, 0, 'C')
+    pdf.cell(30, 8, "Time", 1, 1, 'C')
     
-    pdf.set_font("Arial", '', 9)
+    pdf.set_font("Arial", '', 8)
     for _, row in df_data.iterrows():
-        pdf.cell(20, 10, str(row["branch_no"]), 1, 0, 'C')
-        pdf.cell(40, 10, str(row["branch_name"]), 1, 0, 'C')
-        pdf.cell(25, 10, str(row["box_no"]), 1, 0, 'C')
-        pdf.cell(45, 10, str(row["employee_name"]), 1, 0, 'C')
-        pdf.cell(20, 10, str(row["الزيادة"]), 1, 0, 'C')
-        pdf.cell(20, 10, str(row["النقص"]), 1, 0, 'C')
-        pdf.cell(30, 10, str(row["الوقت"]), 1, 1, 'C')
+        # استخدام التشفير الآمن للنصوص لضمان عدم حدوث أي خطأ
+        b_no = str(row["branch_no"]).encode('latin-1', 'replace').decode('latin-1')
+        b_name = str(row["branch_name"]).encode('latin-1', 'replace').decode('latin-1')
+        box = str(row["box_no"]).encode('latin-1', 'replace').decode('latin-1')
+        emp = str(row["employee_name"]).encode('latin-1', 'replace').decode('latin-1')
+        excess = str(row["الزيادة"]).encode('latin-1', 'replace').decode('latin-1')
+        t_time = str(row["الوقت"]).encode('latin-1', 'replace').decode('latin-1')
+        
+        pdf.cell(20, 8, b_no, 1, 0, 'C')
+        pdf.cell(50, 8, b_name, 1, 0, 'C')
+        pdf.cell(25, 8, box, 1, 0, 'C')
+        pdf.cell(45, 8, emp, 1, 0, 'C')
+        pdf.cell(20, 8, excess, 1, 0, 'C')
+        pdf.cell(30, 8, t_time, 1, 1, 'C')
         
     return pdf.output(dest='S').encode('latin1')
 
