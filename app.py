@@ -10,9 +10,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# رابط الشعار المباشر
-LOGO_URL = "https://drive.google.com/uc?export=view&id=10ODeqwy7-WJbxlABqXKOIg3qBzodcVcJ"
-
 # إعداد قاعدة البيانات الداخلية (SQLite)
 def init_db():
     conn = sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
@@ -54,17 +51,16 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 def login_screen():
+    st.markdown('''
+        <div style="background: linear-gradient(135deg, #ffffff 0%, #f9f9f9 100%); padding: 35px; border-radius: 16px; border: 2px solid #d9ea37; text-align: center; max-width: 480px; margin: 40px auto; box-shadow: 0 6px 20px rgba(0,0,0,0.08);">
+            <div style="font-size: 40px; margin-bottom: 10px;">💼</div>
+            <h2 style="color: #111111; font-family: Tahoma; margin-bottom: 5px;">شركة سويس للصرافة</h2>
+            <p style="color: #666666; font-size: 14px; font-weight: bold; margin-top: 0;">قسم التدقيق الداخلي والرقابة</p>
+        </div>
+    ''', unsafe_allow_html=True)
+    
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
-        st.markdown('<div style="text-align: center; margin-bottom: 10px;">', unsafe_allow_html=True)
-        try:
-            st.image(LOGO_URL, width=130)
-        except:
-            pass
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.markdown('<div style="background-color: #ffffff; padding: 25px; border-radius: 16px; border: 2px solid #d9ea37; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.08);"><h2 style="color: #000000; font-family: Tahoma; margin-bottom: 5px;">شركة سويس للصرافة</h2><p style="color: #666666; font-size: 14px; margin-top: 0;">بوابة الدخول لقسم التدقيق الداخلي والرقابة</p></div>', unsafe_allow_html=True)
-        
         with st.form("login_form"):
             username = st.text_input("اسم المستخدم")
             password = st.text_input("كلمة المرور", type="password")
@@ -80,10 +76,12 @@ def login_screen():
 
 def main_app():
     with st.sidebar:
-        try:
-            st.image(LOGO_URL, width=100)
-        except:
-            pass
+        st.markdown('''
+            <div style="text-align: center; padding: 10px; background-color: #f1f1f1; border-radius: 10px; margin-bottom: 15px;">
+                <h4 style="margin: 0; color: #111;">💼 سويس للصرافة</h4>
+                <p style="margin: 5px 0 0 0; font-size: 12px; color: #555;">التدقيق الداخلي</p>
+            </div>
+        ''', unsafe_allow_html=True)
         st.markdown("👤 **المستخدم:** `ADMIN`")
         st.write("---")
     
