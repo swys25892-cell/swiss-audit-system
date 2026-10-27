@@ -10,7 +10,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# إعداد قاعدة البيانات الداخلية (SQLite) لتخزين البيانات بالكامل داخل التطبيق
+# رابط الشعار المباشر
+LOGO_URL = "https://drive.google.com/uc?export=view&id=10ODeqwy7-WJbxlABqXKOIg3qBzodcVcJ"
+
+# إعداد قاعدة البيانات الداخلية (SQLite)
 def init_db():
     conn = sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
     c = conn.cursor()
@@ -31,7 +34,6 @@ def init_db():
 
 init_db()
 
-# دوال التعامل مع قاعدة البيانات
 def add_record(date, branch, box_no, employee, discrepancy, status, notes):
     conn = sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
     c = conn.cursor()
@@ -48,15 +50,21 @@ def get_data():
     conn.close()
     return df
 
-# حالة تسجيل الدخول
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 def login_screen():
-    st.markdown('<div style="background-color: #ffffff; padding: 25px; border-radius: 16px; border: 2px solid #d9ea37; text-align: center; max-width: 480px; margin: 30px auto; box-shadow: 0 4px 15px rgba(0,0,0,0.08);"><h2 style="color: #000000; font-family: Tahoma; margin-bottom: 5px;">شركة سويس للصرافة</h2><p style="color: #666666; font-size: 14px; margin-top: 0;">بوابة الدخول لقسم التدقيق الداخلي والرقابة</p></div>', unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([1, 1.5, 1])
+    col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
+        st.markdown('<div style="text-align: center; margin-bottom: 10px;">', unsafe_allow_html=True)
+        try:
+            st.image(LOGO_URL, width=130)
+        except:
+            pass
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.markdown('<div style="background-color: #ffffff; padding: 25px; border-radius: 16px; border: 2px solid #d9ea37; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.08);"><h2 style="color: #000000; font-family: Tahoma; margin-bottom: 5px;">شركة سويس للصرافة</h2><p style="color: #666666; font-size: 14px; margin-top: 0;">بوابة الدخول لقسم التدقيق الداخلي والرقابة</p></div>', unsafe_allow_html=True)
+        
         with st.form("login_form"):
             username = st.text_input("اسم المستخدم")
             password = st.text_input("كلمة المرور", type="password")
@@ -71,8 +79,13 @@ def login_screen():
                     st.error("اسم المستخدم أو كلمة المرور غير صحيحة")
 
 def main_app():
-    st.sidebar.markdown("👤 **المستخدم:** `ADMIN`")
-    st.sidebar.write("---")
+    with st.sidebar:
+        try:
+            st.image(LOGO_URL, width=100)
+        except:
+            pass
+        st.markdown("👤 **المستخدم:** `ADMIN`")
+        st.write("---")
     
     menu = st.sidebar.selectbox("قائمة التنقل الرئيسي", ["🏠 الرئيسية والمؤشرات", "📝 صفحة الإدخال اليومي", "🚨 تقرير الحالات غير المطابقة والسجلات"])
     
