@@ -94,7 +94,7 @@ init_db()
 def get_db_connection():
     return sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
 
-# دالة توليد ملف PDF متوافقة ومستقرة تماماً مع ستريمليت
+# دالة توليد ملف PDF متوافقة ومستقرة تماماً مع أحدث إصدارات fpdf2
 def generate_pdf_report(df_data, date_str):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
@@ -130,8 +130,8 @@ def generate_pdf_report(df_data, date_str):
         pdf.cell(20, 8, excess, 1, 0, 'C')
         pdf.cell(30, 8, t_time, 1, 1, 'C')
         
-    # إرجاع البيانات بصيغة بايت متوافقة مع زر التحميل
-    return pdf.output(dest='S').encode('latin1')
+    # إرجاع الملف بصيغة بايت متوافقة مع fpdf2 الحديثة
+    return bytes(pdf.output())
 
 # حالة تسجيل الدخول
 if "logged_in" not in st.session_state:
