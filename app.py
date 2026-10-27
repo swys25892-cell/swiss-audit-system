@@ -3,10 +3,6 @@ import pandas as pd
 import sqlite3
 from datetime import datetime
 from fpdf import FPDF
-import os
-import urllib.request
-import arabic_reshaper
-from bidi.algorithm import get_display
 
 # إعدادات الصفحة
 st.set_page_config(
@@ -98,12 +94,11 @@ init_db()
 def get_db_connection():
     return sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
 
-# دالة توليد ملف PDF متوافقة وآمنة تماماً ضد أخطاء الترميز
+# دالة توليد ملف PDF متوافقة ومستقرة تماماً مع ستريمليت
 def generate_pdf_report(df_data, date_str):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
     
-    # استخدام الخط الافتراضي مع معالجة آمنة للحروف لضمان عدم توقف النظام
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(190, 10, txt="Swiss Exchange Company - Internal Audit Report", ln=True, align='C')
     
@@ -111,7 +106,6 @@ def generate_pdf_report(df_data, date_str):
     pdf.cell(190, 8, txt=f"Non-Compliance Report - Date: {date_str}", ln=True, align='C')
     pdf.ln(8)
     
-    # رأس جدول التقرير بالإنجليزية لضمان الوضوح التام وعدم حدوث أي استثناءات
     pdf.set_font("Arial", 'B', 9)
     pdf.cell(20, 8, "Branch No", 1, 0, 'C')
     pdf.cell(50, 8, "Branch Name", 1, 0, 'C')
@@ -136,7 +130,8 @@ def generate_pdf_report(df_data, date_str):
         pdf.cell(20, 8, excess, 1, 0, 'C')
         pdf.cell(30, 8, t_time, 1, 1, 'C')
         
-    return pdf.output(dest='S')
+    # إرجاع البيانات بصيغة بايت متوافقة مع زر التحميل
+    return pdf.output(dest='S').encode('latin1')
 
 # حالة تسجيل الدخول
 if "logged_in" not in st.session_state:
