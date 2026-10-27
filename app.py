@@ -3,6 +3,10 @@ import pandas as pd
 import sqlite3
 from datetime import datetime
 from fpdf import FPDF
+import os
+import urllib.request
+import arabic_reshaper
+from bidi.algorithm import get_display
 
 # إعدادات الصفحة
 st.set_page_config(
@@ -94,36 +98,58 @@ init_db()
 def get_db_connection():
     return sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
 
-# دالة توليد ملف PDF متوافقة مع النصوص لتجنب أخطاء الترميز
+# دالة معالجة النصوص العربية للـ PDF
+def fix_arabic(text):
+    if not text:
+        return ""
+    try:
+        reshaped = arabic_reshaper.reshape(str(text))
+        bidi_text = get_display(reshaped)
+        return bidi_text
+    except:
+        return str(text)
+
+# دالة توليد ملف PDF يدعم العربية
 def generate_pdf_report(df_data, date_str):
+    font_path = "DejaVuSans.ttf"
+    if not os.path.exists(font_path):
+        try:
+            url = "https://github.com/dejavu-fonts/dejavu-fonts-ttf/raw/2.37/ttf/DejaVuSans.ttf"
+            urllib.request.urlretrieve(url, font_path)
+        except:
+            pass
+
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
     
-    # استخدام خط أساسي آمن وتجنب مشاكل التشفير بالترميز الآمن
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(190, 10, txt="Swiss Exchange Company - Internal Audit Report", ln=True, align='C')
-    pdf.set_font("Arial", 'B', 11)
-    pdf.cell(190, 8, txt=f"Non-Compliance Report - Date: {date_str}", ln=True, align='C')
+    if os.path.exists(font_path):
+        pdf.add_font("DejaVu", "", font_path)
+        pdf.set_font("DejaVu", size=14)
+    else:
+        pdf.set_font("Arial", size=14)
+    
+    # ترويسة التقرير
+    pdf.cell(190, 10, txt=fix_arabic("شركة سويس للصرافة - تقرير التدقيق الداخلي"), ln=True, align='C')
+    pdf.set_font("DejaVu", size=11) if os.path.exists(font_path) else pdf.set_font("Arial", size=11)
+    pdf.cell(190, 8, txt=fix_arabic(f"تقرير الحالات غير المطابقة - التاريخ: {date_str}"), ln=True, align='C')
     pdf.ln(8)
     
     # رأس جدول التقرير
-    pdf.set_font("Arial", 'B', 9)
-    pdf.cell(20, 8, "Branch No", 1, 0, 'C')
-    pdf.cell(50, 8, "Branch Name", 1, 0, 'C')
-    pdf.cell(25, 8, "Box No", 1, 0, 'C')
-    pdf.cell(45, 8, "Employee Name", 1, 0, 'C')
-    pdf.cell(20, 8, "Excess", 1, 0, 'C')
-    pdf.cell(30, 8, "Time", 1, 1, 'C')
+    pdf.set_font("DejaVu", size=9) if os.path.exists(font_path) else pdf.set_font("Arial", size=9)
+    pdf.cell(20, 8, fix_arabic("رقم الفرع"), 1, 0, 'C')
+    pdf.cell(50, 8, fix_arabic("اسم الفرع"), 1, 0, 'C')
+    pdf.cell(25, 8, fix_arabic("رقم الصندوق"), 1, 0, 'C')
+    pdf.cell(45, 8, fix_arabic("اسم الموظف"), 1, 0, 'C')
+    pdf.cell(20, 8, fix_arabic("الزيادة"), 1, 0, 'C')
+    pdf.cell(30, 8, fix_arabic("الوقت"), 1, 1, 'C')
     
-    pdf.set_font("Arial", '', 8)
     for _, row in df_data.iterrows():
-        # استخدام التشفير الآمن للنصوص لضمان عدم حدوث أي خطأ
-        b_no = str(row["branch_no"]).encode('latin-1', 'replace').decode('latin-1')
-        b_name = str(row["branch_name"]).encode('latin-1', 'replace').decode('latin-1')
-        box = str(row["box_no"]).encode('latin-1', 'replace').decode('latin-1')
-        emp = str(row["employee_name"]).encode('latin-1', 'replace').decode('latin-1')
-        excess = str(row["الزيادة"]).encode('latin-1', 'replace').decode('latin-1')
-        t_time = str(row["الوقت"]).encode('latin-1', 'replace').decode('latin-1')
+        b_no = fix_arabic(str(row["branch_no"]))
+        b_name = fix_arabic(str(row["branch_name"]))
+        box = fix_arabic(str(row["box_no"]))
+        emp = fix_arabic(str(row["employee_name"]))
+        excess = fix_arabic(str(row["الزيادة"]))
+        t_time = fix_arabic(str(row["الوقت"]))
         
         pdf.cell(20, 8, b_no, 1, 0, 'C')
         pdf.cell(50, 8, b_name, 1, 0, 'C')
@@ -132,7 +158,7 @@ def generate_pdf_report(df_data, date_str):
         pdf.cell(20, 8, excess, 1, 0, 'C')
         pdf.cell(30, 8, t_time, 1, 1, 'C')
         
-    return pdf.output(dest='S').encode('latin1')
+    return pdf.output(dest='S')
 
 # حالة تسجيل الدخول
 if "logged_in" not in st.session_state:
