@@ -15,7 +15,7 @@ def init_db():
     conn = sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
     c = conn.cursor()
     
-    # جدول الحركات اليومية المتكامل
+    # جدول الحركات اليومية المتكامل مع الحفظ الدائم
     c.execute('''
         CREATE TABLE IF NOT EXISTS daily_audit (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,7 +28,8 @@ def init_db():
             shortage REAL,
             status TEXT,
             notes TEXT,
-            audit_time TEXT
+            audit_time TEXT,
+            UNIQUE(audit_date, box_no)
         )
     ''')
     
@@ -123,45 +124,61 @@ def main_app():
         st.subheader("📋 جدول المتابعة والتدقيق اليومي للحركات")
         
         selected_date = st.date_input("تاريخ التدقيق المطلوب", datetime.now())
+        date_str = str(selected_date)
+        
         df_emp = pd.read_sql_query("SELECT * FROM employees", conn)
         
         if df_emp.empty:
             st.warning("⚠️ تنبيه: يرجى أولاً إدخال بيانات الموظفين والصناديق من قائمة (قاعدة بيانات الموظفين والصناديق).")
         else:
-            st.info("💡 يمكنك مراجعة وتحديث سجلات التدقيق اليومية أدناه:")
+            # جلب الحركات المحفوظة مسبقاً لهذا التاريخ لضمان عدم اختفائها
+            df_saved = pd.read_sql_query("SELECT * FROM daily_audit WHERE audit_date = ?", conn, params=(date_str,))
             
-            with st.form("daily_batch_form"):
-                branch_filter = st.selectbox("تصفية حسب الفرع:", ["الكل"] + list(df_emp['branch_name'].unique()))
-                
-                if branch_filter != "الكل":
-                    working_df = df_emp[df_emp['branch_name'] == branch_filter].copy()
-                else:
-                    working_df = df_emp.copy()
-                
-                # إضافة الأعمدة الإضافية الافتراضية للجدول المرتب من اليمين لليسار
+            # دمج البيانات الأساسية للموظفين مع الحركات المحفوظة إن وجدت
+            working_df = df_emp.copy()
+            
+            if not df_saved.empty:
+                working_df = pd.merge(working_df, df_saved[['box_no', 'excess', 'shortage', 'status', 'audit_time', 'notes']], on='box_no', how='left')
+                working_df.rename(columns={'excess': 'الزيادة', 'shortage': 'النقص', 'status': 'الحالة', 'audit_time': 'الوقت', 'notes': 'الملاحظات'}, inplace=True)
+            else:
                 working_df["الزيادة"] = 0.0
                 working_df["النقص"] = 0.0
                 working_df["الحالة"] = "مطابق"
                 working_df["الوقت"] = ""
                 working_df["الملاحظات"] = ""
+
+            # تعقيم القيم الفارغة
+            working_df["الزيادة"] = working_df["الزيادة"].fillna(0.0)
+            working_df["النقص"] = working_df["النقص"].fillna(0.0)
+            working_df["الحالة"] = working_df["الحالة"].fillna("مطابق")
+            working_df["الوقت"] = working_df["الوقت"].fillna("")
+            working_df["الملاحظات"] = working_df["الملاحظات"].fillna("")
+
+            # ترتيب الأعمدة من اليمين لليسار بدقة
+            working_df = working_df[[
+                "branch_no", "branch_name", "box_no", "employee_name", 
+                "الزيادة", "النقص", "الحالة", "الوقت", "الملاحظات"
+            ]]
+
+            with st.form("daily_batch_form"):
+                branch_filter = st.selectbox("تصفية حسب الفرع:", ["الكل"] + list(df_emp['branch_name'].unique()))
                 
-                # ترتيب الأعمدة بالتمام كما طلبت من اليمين لليسار
-                working_df = working_df[[
-                    "branch_no", "branch_name", "box_no", "employee_name", 
-                    "الزيادة", "النقص", "الحالة", "الوقت", "الملاحظات"
-                ]]
+                if branch_filter != "الكل":
+                    filtered_df = working_df[working_df['branch_name'] == branch_filter]
+                else:
+                    filtered_df = working_df
                 
                 edited_df = st.data_editor(
-                    working_df,
+                    filtered_df,
                     column_config={
-                        "branch_no": "رقم الفرع",
-                        "branch_name": "اسم الفرع",
-                        "box_no": "رقم الصندوق",
-                        "employee_name": "اسم الموظف",
+                        "branch_no": st.column_config.TextColumn("رقم الفرع", disabled=True),
+                        "branch_name": st.column_config.TextColumn("اسم الفرع", disabled=True),
+                        "box_no": st.column_config.TextColumn("رقم الصندوق", disabled=True),
+                        "employee_name": st.column_config.TextColumn("اسم الموظف", disabled=True),
                         "الزيادة": "الزيادة",
                         "النقص": "النقص",
                         "الحالة": st.column_config.SelectboxColumn("الحالة", options=["مطابق", "غير مطابق"], required=True),
-                        "الوقت": "الوقت",
+                        "الوقت": st.column_config.TextColumn("الوقت", disabled=True),
                         "الملاحظات": "الملاحظات"
                     },
                     use_container_width=True,
@@ -174,12 +191,18 @@ def main_app():
                     current_time_str = datetime.now().strftime("%I:%M:%S %p")
                     c = conn.cursor()
                     for index, row in edited_df.iterrows():
-                        # تحديث الوقت تلقائياً عند الحفظ إذا كانت الحالة معدلة
+                        # تحديث الوقت فقط إذا تم الحفظ
                         c.execute('''
                             INSERT INTO daily_audit (audit_date, branch_no, branch_name, box_no, employee_name, excess, shortage, status, notes, audit_time)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(audit_date, box_no) DO UPDATE SET
+                                excess = excluded.excess,
+                                shortage = excluded.shortage,
+                                status = excluded.status,
+                                notes = excluded.notes,
+                                audit_time = CASE WHEN daily_audit.status != excluded.status OR daily_audit.audit_time = '' THEN ? ELSE daily_audit.audit_time END
                         ''', (
-                            str(selected_date), 
+                            date_str, 
                             str(row["branch_no"]), 
                             str(row["branch_name"]), 
                             str(row["box_no"]), 
@@ -187,11 +210,12 @@ def main_app():
                             float(row["الزيادة"]), 
                             float(row["النقص"]), 
                             str(row["الحالة"]), 
-                            str(row["الملاحظات"]), 
+                            str(row["الملاحظات"]),
                             current_time_str
                         ))
                     conn.commit()
-                    st.success("تم حفظ وتحديث حركات التدقيق اليومية مع إثبات الوقت والملاحظات بنجاح تام!")
+                    st.success("تم حفظ وتحديث حركات التدقيق اليومية وتثبيت الوقت والملاحظات في قاعدة البيانات بنجاح تام!")
+                    st.rerun()
 
     elif menu == "👥 قاعدة بيانات الموظفين والصناديق":
         st.subheader("👥 إدارة قاعدة بيانات الموظفين والصناديق والفروع")
