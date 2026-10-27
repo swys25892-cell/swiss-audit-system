@@ -123,7 +123,6 @@ def generate_pdf_report(df_data, date_str):
     pdf.add_page()
     
     if os.path.exists(font_path):
-        # تسجيل الخط بالشكل الصحيح لمكتبة fpdf2
         pdf.add_font("DejaVu", fname=font_path)
         pdf.set_font("DejaVu", size=14)
     else:
@@ -337,7 +336,7 @@ def main_app():
             st.success(f"⚡ يتم حفظ التعديلات تلقائياً لتاريخ ({date_str}) بشكل فوري!")
 
             st.write("---")
-            if st.button("🚨 استخراج تقرير الحالات غير المطابقة ليوم " + date_str, use_keyword=True, use_container_width=True) if hasattr(st, 'button') else st.button("🚨 استخراج تقرير الحالات غير المطابقة ليوم " + date_str, use_container_width=True):
+            if st.button("🚨 استخراج تقرير الحالات غير المطابقة ليوم " + date_str, use_container_width=True):
                 df_mismatches = edited_df[edited_df["الحالة"] == "غير مطابق"]
                 if df_mismatches.empty:
                     st.info("🎉 لا توجد أي حالات (غير مطابق) مسجلة لهذا التاريخ.")
