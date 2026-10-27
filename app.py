@@ -355,20 +355,21 @@ def main_app():
 
     elif menu == "🔑 إدارة المستخدمين والصلاحيات":
         st.subheader("🔑 إدارة حسابات المدققين وصلاحيات الدخول")
-        st.caption("يمكنك من هنا إضافة حسابات جديدة للزملاء المدققين وتحديد صلاحياتهم.")
+        st.caption("إضافة حسابات جديدة، مراجعة كلمات المرور للموظفين، وتعديلها أو حذفها.")
         
         if st.session_state.user_role != "مشرف رئيسي":
             st.error("⚠️ عذراً، هذه الصفحة مخصصة للمشرف الرئيسي فقط.")
         else:
-            col_u1, col_u2 = st.columns([1, 1.2])
+            col_u1, col_u2 = st.columns([1, 1.3])
             with col_u1:
                 with st.form("new_user_form"):
+                    st.markdown("##### ➕ إضافة مستخدم جديد")
                     new_user = st.text_input("اسم المستخدم (بالإنجليزية، مثال: ahmad)")
                     new_pass = st.text_input("كلمة المرور", type="password")
                     new_name = st.text_input("اسم الموظف الكامل")
                     new_role = st.selectbox("الصلاحية", ["مدقق", "مشرف رئيسي"])
                     
-                    add_user_btn = st.form_submit_button("إضافة مستخدم جديد", use_container_width=True)
+                    add_user_btn = st.form_submit_button("إضافة المستخدم", use_container_width=True)
                     
                     if add_user_btn:
                         if new_user and new_pass and new_name:
@@ -384,11 +385,48 @@ def main_app():
                         else:
                             st.error("يرجى ملء جميع الحقول المطلوبة.")
                             
+                st.write("---")
+                with st.form("edit_delete_user_form"):
+                    st.markdown("##### ✏️ تعديل أو حذف مستخدم")
+                    df_all_users = pd.read_sql_query("SELECT username FROM users", conn)
+                    user_list = df_all_users['username'].tolist() if not df_all_users.empty else []
+                    
+                    selected_target_user = st.selectbox("اختر اسم المستخدم للتعديل/الحذف", user_list)
+                    edit_pass = st.text_input("كلمة المرور الجديدة (اختياري)", type="password")
+                    edit_role = st.selectbox("تعديل الصلاحية", ["مدقق", "مشرف رئيسي"])
+                    
+                    col_b1, col_b2 = st.columns(2)
+                    with col_b1:
+                        update_btn = st.form_submit_button("💾 تحديث البيانات", use_container_width=True)
+                    with col_b2:
+                        delete_btn = st.form_submit_button("🗑️ حذف المستخدم", use_container_width=True)
+                        
+                    if update_btn and selected_target_user:
+                        c = conn.cursor()
+                        if edit_pass.strip():
+                            c.execute("UPDATE users SET password = ?, role = ? WHERE username = ?", (edit_pass.strip(), edit_role, selected_target_user))
+                        else:
+                            c.execute("UPDATE users SET role = ? WHERE username = ?", (edit_role, selected_target_user))
+                        conn.commit()
+                        st.success(f"تم تحديث بيانات المستخدم ({selected_target_user}) بنجاح!")
+                        st.rerun()
+                        
+                    if delete_btn and selected_target_user:
+                        if selected_target_user == "ADMIN":
+                            st.error("⚠️ لا يمكن حذف حساب المشرف الرئيسي (ADMIN) الأساسي للنظام!")
+                        else:
+                            c = conn.cursor()
+                            c.execute("DELETE FROM users WHERE username = ?", (selected_target_user,))
+                            conn.commit()
+                            st.success(f"تم حذف المستخدم ({selected_target_user}) بنجاح!")
+                            st.rerun()
+                            
             with col_u2:
-                st.markdown("##### 📋 قائمة المستخدمين المسجلين في النظام")
-                df_users = pd.read_sql_query("SELECT username, full_name, role FROM users", conn)
+                st.markdown("##### 📋 جدول المستخدمين وكلمات المرور (خاص بالمدير)")
+                df_users = pd.read_sql_query("SELECT username, password, full_name, role FROM users", conn)
                 st.dataframe(df_users.rename(columns={
                     "username": "اسم المستخدم",
+                    "password": "كلمة المرور",
                     "full_name": "الاسم الكامل",
                     "role": "الصلاحية"
                 }), use_container_width=True)
