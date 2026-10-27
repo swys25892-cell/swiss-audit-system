@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 from datetime import datetime
+from fpdf import FPDF
 
 # إعدادات الصفحة
 st.set_page_config(
@@ -93,6 +94,40 @@ init_db()
 def get_db_connection():
     return sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
 
+# دالة توليد ملف PDF للحالات غير المطابقة
+def generate_pdf_report(df_data, date_str):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    
+    # ترويسة التقرير
+    pdf.cell(200, 10, txt="Swiss Exchange Company - Internal Audit", ln=True, align='C')
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(200, 10, txt=f"Non-Compliance Audit Report - Date: {date_str}", ln=True, align='C')
+    pdf.ln(10)
+    
+    # جدول البيانات
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(20, 10, "Branch No", 1, 0, 'C')
+    pdf.cell(40, 10, "Branch Name", 1, 0, 'C')
+    pdf.cell(25, 10, "Box No", 1, 0, 'C')
+    pdf.cell(45, 10, "Employee Name", 1, 0, 'C')
+    pdf.cell(20, 10, "Excess", 1, 0, 'C')
+    pdf.cell(20, 10, "Short", 1, 0, 'C')
+    pdf.cell(30, 10, "Time", 1, 1, 'C')
+    
+    pdf.set_font("Arial", '', 9)
+    for _, row in df_data.iterrows():
+        pdf.cell(20, 10, str(row["branch_no"]), 1, 0, 'C')
+        pdf.cell(40, 10, str(row["branch_name"]), 1, 0, 'C')
+        pdf.cell(25, 10, str(row["box_no"]), 1, 0, 'C')
+        pdf.cell(45, 10, str(row["employee_name"]), 1, 0, 'C')
+        pdf.cell(20, 10, str(row["الزيادة"]), 1, 0, 'C')
+        pdf.cell(20, 10, str(row["النقص"]), 1, 0, 'C')
+        pdf.cell(30, 10, str(row["الوقت"]), 1, 1, 'C')
+        
+    return pdf.output(dest='S').encode('latin1')
+
 # حالة تسجيل الدخول
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -145,7 +180,6 @@ def main_app():
         st.markdown(f"🔒 **الصلاحية:** `{st.session_state.user_role}`")
         st.write("---")
     
-    # القائمة المنسدلة تشمل خيار تغيير كلمة المرور للمستخدم الحالي
     menu_options = [
         "📋 لوحة المتابعة والتدقيق اليومي", 
         "📁 المطابقات الشهرية والترحيل",
@@ -154,7 +188,6 @@ def main_app():
         "📊 المؤشرات والتقارير الإحصائية"
     ]
     
-    # إضافة صفحة إدارة المستخدمين للمشرف الرئيسي فقط
     if st.session_state.user_role == "مشرف رئيسي":
         menu_options.insert(3, "🔑 إدارة المستخدمين والصلاحيات")
 
@@ -167,7 +200,6 @@ def main_app():
         st.session_state.user_role = ""
         st.rerun()
 
-    # الهيدر العلوي للنظام
     st.markdown('''
         <div style="background-color: #ffffff; padding: 18px; border-radius: 12px; border-right: 6px solid #d9ea37; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px; text-align: center;">
             <h2 style="color: #111111; margin: 0; font-size: 22px;">شركة سويس للصرافة | لوحة المتابعة والتدقيق اليومي للحركات</h2>
@@ -262,6 +294,35 @@ def main_app():
                     ''', (date_str, str(row["branch_no"]), str(row["branch_name"]), box, str(row["employee_name"]), float(row["الزيادة"]), float(row["النقص"]), str(row["الحالة"]), str(row["الملاحظات"]), current_time_str))
             conn.commit()
             st.success(f"⚡ يتم حفظ التعديلات تلقائياً لتاريخ ({date_str}) بشكل فوري!")
+
+            st.write("---")
+            if st.button("🚨 استخراج تقرير الحالات غير المطابقة ليوم " + date_str, use_container_width=True):
+                df_mismatches = edited_df[edited_df["الحالة"] == "غير مطابق"]
+                if df_mismatches.empty:
+                    st.info("🎉 لا توجد أي حالات (غير مطابق) مسجلة لهذا التاريخ.")
+                else:
+                    st.warning(f"⚠️ تم رصد ({len(df_mismatches)}) حالة غير مطابقة لهذا اليوم:")
+                    st.dataframe(df_mismatches, use_container_width=True, hide_index=True)
+                    
+                    col_d1, col_d2 = st.columns(2)
+                    with col_d1:
+                        csv_data = df_mismatches.to_csv(index=False).encode('utf-8-sig')
+                        st.download_button(
+                            label="📥 تحميل تقرير CSV",
+                            data=csv_data,
+                            file_name=f"non_matching_report_{date_str}.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+                    with col_d2:
+                        pdf_data = generate_pdf_report(df_mismatches, date_str)
+                        st.download_button(
+                            label="📥 تحميل تقرير PDF",
+                            data=pdf_data,
+                            file_name=f"non_matching_report_{date_str}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True
+                        )
 
     elif menu == "📁 المطابقات الشهرية والترحيل":
         st.subheader("📁 أرشيف المطابقات الشهرية والترحيل اليومي")
@@ -470,7 +531,7 @@ def main_app():
 
     elif menu == "📊 المؤشرات والتقارير الإحصائية":
         st.subheader("📊 المؤشرات والتقارير العامة للتدقيق")
-        c1, c2, c3 = sub_cols = st.columns(3)
+        c1, c2, c3 = st.columns(3)
         df_all = pd.read_sql_query("SELECT * FROM employees", conn)
         total_boxes = len(df_all)
         c1.metric("إجمالي الصناديق المسجلة", total_boxes)
@@ -481,6 +542,6 @@ def main_app():
     conn.close()
 
 if not st.session_state.logged_in:
-    login_session_screen = login_screen()
+    login_screen()
 else:
     main_app()
