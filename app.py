@@ -59,6 +59,23 @@ def init_db():
         )
     ''')
     
+    # جدول المستخدمين والصلاحيات
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            password TEXT,
+            role TEXT,
+            full_name TEXT
+        )
+    ''')
+    
+    # إنشاء حساب المشرف الافتراضي إن لم يكن موجوداً
+    c.execute("SELECT COUNT(*) FROM users")
+    if c.fetchone()[0] == 0:
+        c.execute("INSERT INTO users (username, password, role, full_name) VALUES (?, ?, ?, ?)", 
+                  ("ADMIN", "1234", "مشرف رئيسي", "مدير النظام"))
+        conn.commit()
+        
     try:
         c.execute("ALTER TABLE employees ADD COLUMN branch_no TEXT")
     except:
@@ -79,6 +96,10 @@ def get_db_connection():
 # حالة تسجيل الدخول
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
+if "username" not in st.session_state:
+    st.session_state.username = ""
+if "user_role" not in st.session_state:
+    st.session_state.user_role = ""
 
 def login_screen():
     st.markdown('''
@@ -92,13 +113,21 @@ def login_screen():
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         with st.form("login_form"):
-            username = st.text_input("اسم المستخدم")
-            password = st.text_input("كلمة المرور", type="password")
+            username_input = st.text_input("اسم المستخدم")
+            password_input = st.text_input("كلمة المرور", type="password")
             submit_login = st.form_submit_button("تسجيل الدخول", use_container_width=True)
             
             if submit_login:
-                if username == "ADMIN" and password == "1234":
+                conn = get_db_connection()
+                c = conn.cursor()
+                c.execute("SELECT password, role FROM users WHERE username = ?", (username_input.strip(),))
+                user_record = c.fetchone()
+                conn.close()
+                
+                if user_record and user_record[0] == password_input.strip():
                     st.session_state.logged_in = True
+                    st.session_state.username = username_input.strip()
+                    st.session_state.user_role = user_record[1]
                     st.success("تم تسجيل الدخول بنجاح!")
                     st.rerun()
                 else:
@@ -112,19 +141,23 @@ def main_app():
                 <p style="margin: 5px 0 0 0; font-size: 12px; color: #555;">التدقيق الداخلي والرقابة</p>
             </div>
         ''', unsafe_allow_html=True)
-        st.markdown("👤 **المستخدم:** `ADMIN`")
+        st.markdown(f"👤 **المستخدم:** `{st.session_state.username}`")
+        st.markdown(f"🔒 **الصلاحية:** `{st.session_state.user_role}`")
         st.write("---")
     
     menu = st.sidebar.selectbox("قائمة التنقل الرئيسي", [
         "📋 لوحة المتابعة والتدقيق اليومي", 
         "📁 المطابقات الشهرية والترحيل",
         "👥 قاعدة بيانات الموظفين والصناديق",
+        "🔑 إدارة المستخدمين والصلاحيات",
         "📊 المؤشرات والتقارير الإحصائية"
     ])
     
     st.sidebar.write("---")
     if st.sidebar.button("تسجيل الخروج", use_container_width=True):
         st.session_state.logged_in = False
+        st.session_state.username = ""
+        st.session_state.user_role = ""
         st.rerun()
 
     # الهيدر العلوي للنظام
@@ -253,7 +286,6 @@ def main_app():
         st.write("---")
         st.markdown("##### 📊 جدول أرشيف المطابقات الشهرية والترحيلات المسجلة")
         
-        # خيار لتصفية الأرشيف حسب التاريخ المختار أو عرضه كاملاً
         archive_view_mode = st.radio("طريقة عرض الأرشيف:", ["عرض السجلات الخاصة بالتاريخ المختار أعلاه فقط", "عرض كافة سجلات الأرشيف الشهري"], horizontal=True)
         
         if archive_view_mode == "عرض السجلات الخاصة بالتاريخ المختار أعلاه فقط":
@@ -319,6 +351,46 @@ def main_app():
                     "employee_name": "اسم الموظف",
                     "branch_name": "اسم الفرع",
                     "branch_no": "رقم الفرع"
+                }), use_container_width=True)
+
+    elif menu == "🔑 إدارة المستخدمين والصلاحيات":
+        st.subheader("🔑 إدارة حسابات المدققين وصلاحيات الدخول")
+        st.caption("يمكنك من هنا إضافة حسابات جديدة للزملاء المدققين وتحديد صلاحياتهم.")
+        
+        if st.session_state.user_role != "مشرف رئيسي":
+            st.error("⚠️ عذراً، هذه الصفحة مخصصة للمشرف الرئيسي فقط.")
+        else:
+            col_u1, col_u2 = st.columns([1, 1.2])
+            with col_u1:
+                with st.form("new_user_form"):
+                    new_user = st.text_input("اسم المستخدم (بالإنجليزية، مثال: ahmad)")
+                    new_pass = st.text_input("كلمة المرور", type="password")
+                    new_name = st.text_input("اسم الموظف الكامل")
+                    new_role = st.selectbox("الصلاحية", ["مدقق", "مشرف رئيسي"])
+                    
+                    add_user_btn = st.form_submit_button("إضافة مستخدم جديد", use_container_width=True)
+                    
+                    if add_user_btn:
+                        if new_user and new_pass and new_name:
+                            try:
+                                c = conn.cursor()
+                                c.execute("INSERT INTO users (username, password, role, full_name) VALUES (?, ?, ?, ?)",
+                                          (new_user.strip(), new_pass.strip(), new_role, new_name.strip()))
+                                conn.commit()
+                                st.success(f"تم إضافة المستخدم ({new_name}) بنجاح!")
+                                st.rerun()
+                            except sqlite3.IntegrityError:
+                                st.error("اسم المستخدم موجود مسبقاً، يرجى اختيار اسم آخر.")
+                        else:
+                            st.error("يرجى ملء جميع الحقول المطلوبة.")
+                            
+            with col_u2:
+                st.markdown("##### 📋 قائمة المستخدمين المسجلين في النظام")
+                df_users = pd.read_sql_query("SELECT username, full_name, role FROM users", conn)
+                st.dataframe(df_users.rename(columns={
+                    "username": "اسم المستخدم",
+                    "full_name": "الاسم الكامل",
+                    "role": "الصلاحية"
                 }), use_container_width=True)
 
     elif menu == "📊 المؤشرات والتقارير الإحصائية":
