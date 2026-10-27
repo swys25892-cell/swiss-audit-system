@@ -15,7 +15,7 @@ def init_db():
     conn = sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
     c = conn.cursor()
     
-    # جدول الحركات اليومية المتكامل مع الحفظ الدائم
+    # جدول الحركات اليومية مع منع تكرار نفس الصندوق في نفس اليوم
     c.execute('''
         CREATE TABLE IF NOT EXISTS daily_audit (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -131,13 +131,23 @@ def main_app():
         if df_emp.empty:
             st.warning("⚠️ تنبيه: يرجى أولاً إدخال بيانات الموظفين والصناديق من قائمة (قاعدة بيانات الموظفين والصناديق).")
         else:
-            # جلب الحركات المحفوظة مسبقاً لهذا التاريخ لضمان عدم اختفائها
+            # تنظيف أي تكرارات قديمة مسبقاً في قاعدة البيانات لمنع ظهور الموظف مرتين
+            c_clean = conn.cursor()
+            c_clean.execute('''
+                DELETE FROM daily_audit 
+                WHERE id NOT IN (
+                    SELECT MAX(id) FROM daily_audit GROUP BY audit_date, box_no
+                )
+            ''')
+            conn.commit()
+
+            # جلب الحركات المحفوظة لهذا التاريخ
             df_saved = pd.read_sql_query("SELECT * FROM daily_audit WHERE audit_date = ?", conn, params=(date_str,))
             
-            # دمج البيانات الأساسية للموظفين مع الحركات المحفوظة إن وجدت
             working_df = df_emp.copy()
             
             if not df_saved.empty:
+                df_saved = df_saved.drop_duplicates(subset=['box_no'], keep='last')
                 working_df = pd.merge(working_df, df_saved[['box_no', 'excess', 'shortage', 'status', 'audit_time', 'notes']], on='box_no', how='left')
                 working_df.rename(columns={'excess': 'الزيادة', 'shortage': 'النقص', 'status': 'الحالة', 'audit_time': 'الوقت', 'notes': 'الملاحظات'}, inplace=True)
             else:
@@ -147,14 +157,13 @@ def main_app():
                 working_df["الوقت"] = ""
                 working_df["الملاحظات"] = ""
 
-            # تعقيم القيم الفارغة
             working_df["الزيادة"] = working_df["الزيادة"].fillna(0.0)
             working_df["النقص"] = working_df["النقص"].fillna(0.0)
             working_df["الحالة"] = working_df["الحالة"].fillna("مطابق")
             working_df["الوقت"] = working_df["الوقت"].fillna("")
             working_df["الملاحظات"] = working_df["الملاحظات"].fillna("")
 
-            # ترتيب الأعمدة من اليمين لليسار بدقة
+            # ترتيب الأعمدة من اليمين لليسار
             working_df = working_df[[
                 "branch_no", "branch_name", "box_no", "employee_name", 
                 "الزيادة", "النقص", "الحالة", "الوقت", "الملاحظات"
@@ -191,7 +200,6 @@ def main_app():
                     current_time_str = datetime.now().strftime("%I:%M:%S %p")
                     c = conn.cursor()
                     for index, row in edited_df.iterrows():
-                        # تحديث الوقت فقط إذا تم الحفظ
                         c.execute('''
                             INSERT INTO daily_audit (audit_date, branch_no, branch_name, box_no, employee_name, excess, shortage, status, notes, audit_time)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -200,7 +208,11 @@ def main_app():
                                 shortage = excluded.shortage,
                                 status = excluded.status,
                                 notes = excluded.notes,
-                                audit_time = CASE WHEN daily_audit.status != excluded.status OR daily_audit.audit_time = '' THEN ? ELSE daily_audit.audit_time END
+                                audit_time = CASE 
+                                    WHEN daily_audit.status != excluded.status OR daily_audit.audit_time IS NULL OR daily_audit.audit_time = '' 
+                                    THEN ? 
+                                    ELSE daily_audit.audit_time 
+                                END
                         ''', (
                             date_str, 
                             str(row["branch_no"]), 
@@ -214,7 +226,7 @@ def main_app():
                             current_time_str
                         ))
                     conn.commit()
-                    st.success("تم حفظ وتحديث حركات التدقيق اليومية وتثبيت الوقت والملاحظات في قاعدة البيانات بنجاح تام!")
+                    st.success("تم تحديث وحفظ سجلات التدقيق اليومية بنجاح تام دون أي تكرار!")
                     st.rerun()
 
     elif menu == "👥 قاعدة بيانات الموظفين والصناديق":
