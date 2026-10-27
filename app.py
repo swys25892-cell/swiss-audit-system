@@ -10,10 +10,11 @@ st.set_page_config(
     layout="wide"
 )
 
-# إعداد قاعدة البيانات الداخلية (SQLite)
+# إعداد قاعدة البيانات الداخلية (SQLite) مع دعم التحديث التلقائي للأعمدة
 def init_db():
     conn = sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
     c = conn.cursor()
+    
     # جدول الحركات اليومية المتكامل
     c.execute('''
         CREATE TABLE IF NOT EXISTS daily_audit (
@@ -30,6 +31,7 @@ def init_db():
             audit_time TEXT
         )
     ''')
+    
     # جدول الموظفين والصناديق الأساسي
     c.execute('''
         CREATE TABLE IF NOT EXISTS employees (
@@ -39,6 +41,17 @@ def init_db():
             branch_no TEXT
         )
     ''')
+    
+    # إضافة الأعمدة التلقائية في حال كان الجدول قديمًا
+    try:
+        c.execute("ALTER TABLE employees ADD COLUMN branch_no TEXT")
+    except:
+        pass
+    try:
+        c.execute("ALTER TABLE employees ADD COLUMN branch_name TEXT")
+    except:
+        pass
+        
     conn.commit()
     conn.close()
 
@@ -110,16 +123,13 @@ def main_app():
     if menu == "📋 لوحة المتابعة والتدقيق اليومي":
         st.subheader("📋 جدول المتابعة والتدقيق اليومي للحركات")
         
-        # فلترة التاريخ
         selected_date = st.date_input("تاريخ التدقيق المطلوب", datetime.now())
-        
-        # جلب البيانات أو عرض نموذج الإدخال السريع
         df_emp = pd.read_sql_query("SELECT * FROM employees", conn)
         
         if df_emp.empty:
             st.warning("⚠️ تنبيه: يرجى أولاً إدخال بيانات الموظفين والصناديق من قائمة (قاعدة بيانات الموظفين والصناديق).")
         else:
-            st.info("💡 يمكنك إدخال حالة المطابقة وتحديث بيانات الحركة لكل صندوق وموظف مباشرة أدناه:")
+            st.info("💡 يمكنك مراجعة وتحديث سجلات التدقيق اليومية أدناه:")
             
             with st.form("daily_batch_form"):
                 branch_filter = st.selectbox("تصفية حسب الفرع:", ["الكل"] + list(df_emp['branch_name'].unique()))
@@ -129,7 +139,6 @@ def main_app():
                 else:
                     working_df = df_emp
                 
-                # عرض الجدول بشكل مبسط للإدخال
                 edited_df = st.data_editor(
                     working_df,
                     column_config={
