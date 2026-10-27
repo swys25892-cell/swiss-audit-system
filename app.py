@@ -109,12 +109,11 @@ def ar(text):
     except:
         return str(text)
 
-# دالة توليد تقرير PDF يدعم العربية بشكل كامل
+# دالة توليد تقرير PDF مع إدراج شعار الشركة بالاسم الصحيح
 def generate_pdf_report(df_data, date_str):
     font_path = "Amiri-Regular.ttf"
     if not os.path.exists(font_path):
         try:
-            # تحميل خط Amiri مجاناً لتثبيته في السحابة
             url = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
             urllib.request.urlretrieve(url, font_path)
         except:
@@ -123,6 +122,15 @@ def generate_pdf_report(df_data, date_str):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
     
+    # إدراج الشعار في أعلى تقرير الـ PDF بالاسم المطابق لملفك المرفوع
+    logo_file = "LOGO-removebg-preview.png"
+    if os.path.exists(logo_file):
+        try:
+            pdf.image(logo_file, x=85, y=10, w=40)
+            pdf.ln(22)
+        except:
+            pass
+
     if os.path.exists(font_path):
         pdf.add_font("Amiri", fname=font_path)
         pdf.set_font("Amiri", size=16)
@@ -217,6 +225,11 @@ def login_screen():
 
 def main_app():
     with st.sidebar:
+        # عرض الشعار في القائمة الجانبية بالاسم الدقيق
+        logo_file = "LOGO-removebg-preview.png"
+        if os.path.exists(logo_file):
+            st.image(logo_file, use_column_width=True)
+        
         st.markdown('''
             <div style="text-align: center; padding: 10px; background-color: #f1f1f1; border-radius: 10px; margin-bottom: 15px;">
                 <h4 style="margin: 0; color: #111;">💼 سويس للصرافة</h4>
