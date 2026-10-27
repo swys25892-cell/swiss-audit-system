@@ -138,7 +138,7 @@ def main_app():
     conn = get_db_connection()
 
     if menu == "📋 لوحة المتابعة والتدقيق اليومي":
-        st.subheader("📋 جدول المتابعة والتدقيق اليومي للحركات (حفظ تلقائي)")
+        st.subheader("📋 جدول المتابعة والتدقيق اليومي للحركات (مرتبط بالتاريخ)")
         
         selected_date = st.date_input("تاريخ التدقيق المطلوب", datetime.now())
         date_str = str(selected_date)
@@ -148,16 +148,7 @@ def main_app():
         if df_emp.empty:
             st.warning("⚠️ تنبيه: يرجى أولاً إدخال بيانات الموظفين والصناديق من قائمة (قاعدة بيانات الموظفين والصناديق).")
         else:
-            # تنظيف التكرارات
-            c_clean = conn.cursor()
-            c_clean.execute('''
-                DELETE FROM daily_audit 
-                WHERE id NOT IN (
-                    SELECT MAX(id) FROM daily_audit GROUP BY audit_date, box_no
-                )
-            ''')
-            conn.commit()
-
+            # جلب الحركات المحفوظة خصيصاً للتاريخ المختار فقط
             df_saved = pd.read_sql_query("SELECT * FROM daily_audit WHERE audit_date = ?", conn, params=(date_str,))
             working_df = df_emp.copy()
             
@@ -190,7 +181,6 @@ def main_app():
             else:
                 filtered_df = working_df
             
-            # جدول تفاعلي مع الحفظ التلقائي عند التعديل
             edited_df = st.data_editor(
                 filtered_df,
                 column_config={
@@ -206,10 +196,10 @@ def main_app():
                 },
                 use_container_width=True,
                 hide_index=True,
-                key="audit_editor"
+                key=f"audit_editor_{date_str}"
             )
 
-            # حفظ التعديلات تلقائياً في الخلفية عند أي تغيير في الجدول
+            # الحفظ التلقائي المرتبط بالتاريخ المختار فقط
             current_time_str = datetime.now().strftime("%I:%M:%S %p")
             c = conn.cursor()
             for index, row in edited_df.iterrows():
@@ -233,11 +223,11 @@ def main_app():
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (date_str, str(row["branch_no"]), str(row["branch_name"]), box, str(row["employee_name"]), float(row["الزيادة"]), float(row["النقص"]), str(row["الحالة"]), str(row["الملاحظات"]), current_time_str))
             conn.commit()
-            st.success("⚡ يتم حفظ التعديلات تلقائياً بشكل فوري!")
+            st.success(f"⚡ يتم حفظ التعديلات تلقائياً لتاريخ ({date_str}) بشكل فوري!")
 
     elif menu == "📁 المطابقات الشهرية والترحيل":
         st.subheader("📁 أرشيف المطابقات الشهرية والترحيل اليومي")
-        st.caption("من هنا يمكنك ترحيل حركات وتدقيق اليوم الحالي إلى قاعدة بيانات المطابقات الشهرية.")
+        st.caption("من هنا يمكنك ترحيل حركات وتدقيق اليوم المحدد إلى قاعدة بيانات المطابقات الشهرية[cite: 18].")
         
         target_date = st.date_input("تاريخ اليوم المراد ترحيله", datetime.now(), key="archive_date")
         target_date_str = str(target_date)
@@ -245,14 +235,12 @@ def main_app():
         col_btn1, col_btn2 = st.columns([1, 2])
         with col_btn1:
             if st.button("📥 تنفيذ ترحيل حركات اليوم", use_container_width=True):
-                # جلب بيانات اليوم من الجدول اليومي
                 df_day = pd.read_sql_query("SELECT * FROM daily_audit WHERE audit_date = ?", conn, params=(target_date_str,))
                 if df_day.empty:
-                    st.warning("⚠️ لا توجد حركات مسجلة لهذا التاريخ ليتم ترحيلها.")
+                    st.warning(f"⚠️ لا توجد حركات مسجلة لتاريخ ({target_date_str}) ليتم ترحيلها[cite: 18].")
                 else:
                     c = conn.cursor()
                     for _, r in df_day.iterrows():
-                        # التحقق من عدم التكرار في الأرشيف الشهري
                         c.execute("SELECT id FROM monthly_audit_archive WHERE audit_date = ? AND box_no = ?", (target_date_str, r["box_no"]))
                         exists = c.fetchone()
                         if not exists:
@@ -261,7 +249,7 @@ def main_app():
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ''', (r["audit_date"], r["branch_no"], r["branch_name"], r["box_no"], r["employee_name"], r["excess"], r["shortage"], r["status"], r["notes"], r["audit_time"]))
                     conn.commit()
-                    st.success(fs:=f"✅ تم ترحيل حركات تاريخ ({target_date_str}) إلى أرشيف المطابقات الشهرية بنجاح تام!")
+                    st.success(f"✅ تم ترحيل حركات تاريخ ({target_date_str}) إلى أرشيف المطابقات الشهرية بنجاح تام[cite: 18]!")
         
         st.write("---")
         st.markdown("##### 📊 جدول أرشيف المطابقات الشهرية والترحيلات المسجلة")
