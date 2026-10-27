@@ -32,6 +32,23 @@ def init_db():
         )
     ''')
     
+    # جدول المطابقات والترحيل الشهري
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS monthly_audit_archive (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            audit_date TEXT,
+            branch_no TEXT,
+            branch_name TEXT,
+            box_no TEXT,
+            employee_name TEXT,
+            excess REAL,
+            shortage REAL,
+            status TEXT,
+            notes TEXT,
+            audit_time TEXT
+        )
+    ''')
+    
     # جدول الموظفين والصناديق الأساسي
     c.execute('''
         CREATE TABLE IF NOT EXISTS employees (
@@ -100,6 +117,7 @@ def main_app():
     
     menu = st.sidebar.selectbox("قائمة التنقل الرئيسي", [
         "📋 لوحة المتابعة والتدقيق اليومي", 
+        "📁 المطابقات الشهرية والترحيل",
         "👥 قاعدة بيانات الموظفين والصناديق",
         "📊 المؤشرات والتقارير الإحصائية"
     ])
@@ -120,7 +138,7 @@ def main_app():
     conn = get_db_connection()
 
     if menu == "📋 لوحة المتابعة والتدقيق اليومي":
-        st.subheader("📋 جدول المتابعة والتدقيق اليومي للحركات")
+        st.subheader("📋 جدول المتابعة والتدقيق اليومي للحركات (حفظ تلقائي)")
         
         selected_date = st.date_input("تاريخ التدقيق المطلوب", datetime.now())
         date_str = str(selected_date)
@@ -130,7 +148,7 @@ def main_app():
         if df_emp.empty:
             st.warning("⚠️ تنبيه: يرجى أولاً إدخال بيانات الموظفين والصناديق من قائمة (قاعدة بيانات الموظفين والصناديق).")
         else:
-            # تنظيف أي تكرارات قديمة موجودة في الجدول سابقاً
+            # تنظيف التكرارات
             c_clean = conn.cursor()
             c_clean.execute('''
                 DELETE FROM daily_audit 
@@ -140,9 +158,7 @@ def main_app():
             ''')
             conn.commit()
 
-            # جلب الحركات المحفوظة لهذا التاريخ
             df_saved = pd.read_sql_query("SELECT * FROM daily_audit WHERE audit_date = ?", conn, params=(date_str,))
-            
             working_df = df_emp.copy()
             
             if not df_saved.empty:
@@ -162,89 +178,109 @@ def main_app():
             working_df["الوقت"] = working_df["الوقت"].fillna("")
             working_df["الملاحظات"] = working_df["الملاحظات"].fillna("")
 
-            # ترتيب الأعمدة من اليمين لليسار
             working_df = working_df[[
                 "branch_no", "branch_name", "box_no", "employee_name", 
                 "الزيادة", "النقص", "الحالة", "الوقت", "الملاحظات"
             ]]
 
-            with st.form("daily_batch_form"):
-                branch_filter = st.selectbox("تصفية حسب الفرع:", ["الكل"] + list(df_emp['branch_name'].unique()))
+            branch_filter = st.selectbox("تصفية حسب الفرع:", ["الكل"] + list(df_emp['branch_name'].unique()))
+            
+            if branch_filter != "الكل":
+                filtered_df = working_df[working_df['branch_name'] == branch_filter]
+            else:
+                filtered_df = working_df
+            
+            # جدول تفاعلي مع الحفظ التلقائي عند التعديل
+            edited_df = st.data_editor(
+                filtered_df,
+                column_config={
+                    "branch_no": st.column_config.TextColumn("رقم الفرع", disabled=True),
+                    "branch_name": st.column_config.TextColumn("اسم الفرع", disabled=True),
+                    "box_no": st.column_config.TextColumn("رقم الصندوق", disabled=True),
+                    "employee_name": st.column_config.TextColumn("اسم الموظف", disabled=True),
+                    "الزيادة": "الزيادة",
+                    "النقص": "النقص",
+                    "الحالة": st.column_config.SelectboxColumn("الحالة", options=["مطابق", "غير مطابق"], required=True),
+                    "الوقت": st.column_config.TextColumn("الوقت", disabled=True),
+                    "الملاحظات": "الملاحظات"
+                },
+                use_container_width=True,
+                hide_index=True,
+                key="audit_editor"
+            )
+
+            # حفظ التعديلات تلقائياً في الخلفية عند أي تغيير في الجدول
+            current_time_str = datetime.now().strftime("%I:%M:%S %p")
+            c = conn.cursor()
+            for index, row in edited_df.iterrows():
+                box = str(row["box_no"])
+                c.execute("SELECT id, audit_time, status FROM daily_audit WHERE audit_date = ? AND box_no = ?", (date_str, box))
+                existing_rec = c.fetchone()
                 
-                if branch_filter != "الكل":
-                    filtered_df = working_df[working_df['branch_name'] == branch_filter]
-                else:
-                    filtered_df = working_df
-                
-                edited_df = st.data_editor(
-                    filtered_df,
-                    column_config={
-                        "branch_no": st.column_config.TextColumn("رقم الفرع", disabled=True),
-                        "branch_name": st.column_config.TextColumn("اسم الفرع", disabled=True),
-                        "box_no": st.column_config.TextColumn("رقم الصندوق", disabled=True),
-                        "employee_name": st.column_config.TextColumn("اسم الموظف", disabled=True),
-                        "الزيادة": "الزيادة",
-                        "النقص": "النقص",
-                        "الحالة": st.column_config.SelectboxColumn("الحالة", options=["مطابق", "غير مطابق"], required=True),
-                        "الوقت": st.column_config.TextColumn("الوقت", disabled=True),
-                        "الملاحظات": "الملاحظات"
-                    },
-                    use_container_width=True,
-                    hide_index=True
-                )
-                
-                submit_audit = st.form_submit_button("💾 حفظ وتحديث سجلات التدقيق اليومية", use_container_width=True)
-                
-                if submit_audit:
-                    current_time_str = datetime.now().strftime("%I:%M:%S %p")
-                    c = conn.cursor()
+                if existing_rec:
+                    old_time = existing_rec[1]
+                    old_status = existing_rec[2]
+                    new_time = current_time_str if (old_status != str(row["الحالة"]) or not old_time) else old_time
                     
-                    for index, row in edited_df.iterrows():
-                        box = str(row["box_no"])
-                        # التأكد أولاً هل يوجد سجل سابق للصندوق في هذا اليوم
-                        c.execute("SELECT id, audit_time, status FROM daily_audit WHERE audit_date = ? AND box_no = ?", (date_str, box))
-                        existing_rec = c.fetchone()
-                        
-                        if existing_rec:
-                            # تحديث السجل الموجود
-                            old_time = existing_rec[1]
-                            old_status = existing_rec[2]
-                            # إذا تغيرت الحالة أو كان الوقت فارغاً، نضع الوقت الحالي
-                            new_time = current_time_str if (old_status != str(row["الحالة"]) or not old_time) else old_time
-                            
+                    c.execute('''
+                        UPDATE daily_audit 
+                        SET excess = ?, shortage = ?, status = ?, notes = ?, audit_time = ?
+                        WHERE audit_date = ? AND box_no = ?
+                    ''', (float(row["الزيادة"]), float(row["النقص"]), str(row["الحالة"]), str(row["الملاحظات"]), new_time, date_str, box))
+                else:
+                    c.execute('''
+                        INSERT INTO daily_audit (audit_date, branch_no, branch_name, box_no, employee_name, excess, shortage, status, notes, audit_time)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (date_str, str(row["branch_no"]), str(row["branch_name"]), box, str(row["employee_name"]), float(row["الزيادة"]), float(row["النقص"]), str(row["الحالة"]), str(row["الملاحظات"]), current_time_str))
+            conn.commit()
+            st.success("⚡ يتم حفظ التعديلات تلقائياً بشكل فوري!")
+
+    elif menu == "📁 المطابقات الشهرية والترحيل":
+        st.subheader("📁 أرشيف المطابقات الشهرية والترحيل اليومي")
+        st.caption("من هنا يمكنك ترحيل حركات وتدقيق اليوم الحالي إلى قاعدة بيانات المطابقات الشهرية.")
+        
+        target_date = st.date_input("تاريخ اليوم المراد ترحيله", datetime.now(), key="archive_date")
+        target_date_str = str(target_date)
+        
+        col_btn1, col_btn2 = st.columns([1, 2])
+        with col_btn1:
+            if st.button("📥 تنفيذ ترحيل حركات اليوم", use_container_width=True):
+                # جلب بيانات اليوم من الجدول اليومي
+                df_day = pd.read_sql_query("SELECT * FROM daily_audit WHERE audit_date = ?", conn, params=(target_date_str,))
+                if df_day.empty:
+                    st.warning("⚠️ لا توجد حركات مسجلة لهذا التاريخ ليتم ترحيلها.")
+                else:
+                    c = conn.cursor()
+                    for _, r in df_day.iterrows():
+                        # التحقق من عدم التكرار في الأرشيف الشهري
+                        c.execute("SELECT id FROM monthly_audit_archive WHERE audit_date = ? AND box_no = ?", (target_date_str, r["box_no"]))
+                        exists = c.fetchone()
+                        if not exists:
                             c.execute('''
-                                UPDATE daily_audit 
-                                SET excess = ?, shortage = ?, status = ?, notes = ?, audit_time = ?
-                                WHERE audit_date = ? AND box_no = ?
-                            ''', (
-                                float(row["الزيادة"]), 
-                                float(row["النقص"]), 
-                                str(row["الحالة"]), 
-                                str(row["الملاحظات"]), 
-                                new_time, 
-                                date_str, 
-                                box
-                            ))
-                        else:
-                            # إضافة سجل جديد
-                            c.execute('''
-                                INSERT INTO daily_audit (audit_date, branch_no, branch_name, box_no, employee_name, excess, shortage, status, notes, audit_time)
+                                INSERT INTO monthly_audit_archive (audit_date, branch_no, branch_name, box_no, employee_name, excess, shortage, status, notes, audit_time)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            ''', (
-                                date_str, 
-                                str(row["branch_no"]), 
-                                str(row["branch_name"]), 
-                                box, 
-                                str(row["employee_name"]), 
-                                float(row["الزيادة"]), 
-                                float(row["النقص"]), 
-                                str(row["الحالة"]), 
-                                str(row["الملاحظات"]), 
-                                current_time_str
-                            ))
+                            ''', (r["audit_date"], r["branch_no"], r["branch_name"], r["box_no"], r["employee_name"], r["excess"], r["shortage"], r["status"], r["notes"], r["audit_time"]))
                     conn.commit()
-                    st.success("تم حفظ وتحديث حركات التدقيق بنجاح تام وسرعة عالية!")
-                    st.rerun()
+                    st.success(fs:=f"✅ تم ترحيل حركات تاريخ ({target_date_str}) إلى أرشيف المطابقات الشهرية بنجاح تام!")
+        
+        st.write("---")
+        st.markdown("##### 📊 جدول أرشيف المطابقات الشهرية والترحيلات المسجلة")
+        df_monthly = pd.read_sql_query("SELECT * FROM monthly_audit_archive", conn)
+        if df_monthly.empty:
+            st.info("لا توجد سجلات مرحلة في الأرشيف الشهري حتى الآن.")
+        else:
+            st.dataframe(df_monthly.rename(columns={
+                "audit_date": "التاريخ",
+                "branch_no": "رقم الفرع",
+                "branch_name": "اسم الفرع",
+                "box_no": "رقم الصندوق",
+                "employee_name": "اسم الموظف",
+                "excess": "الزيادة",
+                "shortage": "النقص",
+                "status": "الحالة",
+                "audit_time": "الوقت",
+                "notes": "الملاحظات"
+            }), use_container_width=True)
 
     elif menu == "👥 قاعدة بيانات الموظفين والصناديق":
         st.subheader("👥 إدارة قاعدة بيانات الموظفين والصناديق والفروع")
