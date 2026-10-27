@@ -10,7 +10,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# إعداد قاعدة البيانات الداخلية (SQLite) مع دعم التحديث التلقائي للأعمدة
+# إعداد قاعدة البيانات الداخلية (SQLite)
 def init_db():
     conn = sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
     c = conn.cursor()
@@ -42,7 +42,6 @@ def init_db():
         )
     ''')
     
-    # إضافة الأعمدة التلقائية في حال كان الجدول قديمًا
     try:
         c.execute("ALTER TABLE employees ADD COLUMN branch_no TEXT")
     except:
@@ -135,17 +134,35 @@ def main_app():
                 branch_filter = st.selectbox("تصفية حسب الفرع:", ["الكل"] + list(df_emp['branch_name'].unique()))
                 
                 if branch_filter != "الكل":
-                    working_df = df_emp[df_emp['branch_name'] == branch_filter]
+                    working_df = df_emp[df_emp['branch_name'] == branch_filter].copy()
                 else:
-                    working_df = df_emp
+                    working_df = df_emp.copy()
+                
+                # إضافة الأعمدة الإضافية الافتراضية للجدول المرتب من اليمين لليسار
+                working_df["الزيادة"] = 0.0
+                working_df["النقص"] = 0.0
+                working_df["الحالة"] = "مطابق"
+                working_df["الوقت"] = ""
+                working_df["الملاحظات"] = ""
+                
+                # ترتيب الأعمدة بالتمام كما طلبت من اليمين لليسار
+                working_df = working_df[[
+                    "branch_no", "branch_name", "box_no", "employee_name", 
+                    "الزيادة", "النقص", "الحالة", "الوقت", "الملاحظات"
+                ]]
                 
                 edited_df = st.data_editor(
                     working_df,
                     column_config={
+                        "branch_no": "رقم الفرع",
+                        "branch_name": "اسم الفرع",
                         "box_no": "رقم الصندوق",
                         "employee_name": "اسم الموظف",
-                        "branch_name": "الفرع",
-                        "branch_no": "رقم الفرع"
+                        "الزيادة": "الزيادة",
+                        "النقص": "النقص",
+                        "الحالة": st.column_config.SelectboxColumn("الحالة", options=["مطابق", "غير مطابق"], required=True),
+                        "الوقت": "الوقت",
+                        "الملاحظات": "الملاحظات"
                     },
                     use_container_width=True,
                     hide_index=True
@@ -154,7 +171,27 @@ def main_app():
                 submit_audit = st.form_submit_button("💾 حفظ وتحديث سجلات التدقيق اليومية", use_container_width=True)
                 
                 if submit_audit:
-                    st.success("تم تحديث وحفظ سجلات التدقيق بنجاح تام!")
+                    current_time_str = datetime.now().strftime("%I:%M:%S %p")
+                    c = conn.cursor()
+                    for index, row in edited_df.iterrows():
+                        # تحديث الوقت تلقائياً عند الحفظ إذا كانت الحالة معدلة
+                        c.execute('''
+                            INSERT INTO daily_audit (audit_date, branch_no, branch_name, box_no, employee_name, excess, shortage, status, notes, audit_time)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            str(selected_date), 
+                            str(row["branch_no"]), 
+                            str(row["branch_name"]), 
+                            str(row["box_no"]), 
+                            str(row["employee_name"]), 
+                            float(row["الزيادة"]), 
+                            float(row["النقص"]), 
+                            str(row["الحالة"]), 
+                            str(row["الملاحظات"]), 
+                            current_time_str
+                        ))
+                    conn.commit()
+                    st.success("تم حفظ وتحديث حركات التدقيق اليومية مع إثبات الوقت والملاحظات بنجاح تام!")
 
     elif menu == "👥 قاعدة بيانات الموظفين والصناديق":
         st.subheader("👥 إدارة قاعدة بيانات الموظفين والصناديق والفروع")
@@ -196,7 +233,7 @@ def main_app():
                 st.dataframe(df_current.rename(columns={
                     "box_no": "رقم الصندوق",
                     "employee_name": "اسم الموظف",
-                    "branch_name": "الفرع",
+                    "branch_name": "اسم الفرع",
                     "branch_no": "رقم الفرع"
                 }), use_container_width=True)
 
