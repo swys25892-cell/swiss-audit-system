@@ -31,10 +31,14 @@ st.set_page_config(
     layout="wide"
 )
 
-# إعداد قاعدة البيانات الداخلية (SQLite)
+# إعداد قاعدة البيانات الداخلية (SQLite) مع دعم الفصل بين الفروع لنفس الصندوق
 def init_db():
     conn = sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
     c = conn.cursor()
+    
+    # التحقق من هيكل جدول daily_audit القديم وتحديثه إن لم يكن يدعم الفرع كجزء من المعرّف
+    c.execute("PRAGMA table_info(daily_audit)")
+    columns = [col[1] for col in c.fetchall()]
     
     c.execute('''
         CREATE TABLE IF NOT EXISTS daily_audit (
@@ -91,15 +95,6 @@ def init_db():
         c.execute("INSERT INTO users (username, password, role, full_name) VALUES (?, ?, ?, ?)", 
                   ("ADMIN", "1234", "مشرف رئيسي", "مدير النظام"))
         conn.commit()
-        
-    try:
-        c.execute("ALTER TABLE employees ADD COLUMN branch_no TEXT")
-    except:
-        pass
-    try:
-        c.execute("ALTER TABLE employees ADD COLUMN branch_name TEXT")
-    except:
-        pass
         
     conn.commit()
     conn.close()
@@ -328,7 +323,7 @@ def main_app():
     conn = get_db_connection()
 
     if menu == "📋 لوحة المتابعة والتدقيق اليومي":
-        st.subheader("📋 جدول المتابعة والتدقيق اليومي للحركات (مرتبط بالتاريخ)")
+        st.subheader("📋 جدول المتابعة والتدقيق اليومي للحركات (مرتبط بالتاريخ والفرع)")
         
         selected_date = st.date_input("تاريخ التدقيق المطلوب", now_local().date())
         date_str = str(selected_date)
@@ -344,12 +339,25 @@ def main_app():
             else:
                 st.error(f"⚠️ تعذر سحب البيانات من Google Sheets: {info}")
         else:
+            # فلترة الفرع أولاً ليتم تدقيق الصناديق التابعة لكل فرع بشكل مستقل ومفصول تماماً
+            branch_options = ["الكل"] + list(df_emp['branch_name'].unique())
+            branch_filter = st.selectbox("تصفية حسب الفرع:", branch_options)
+            
+            if branch_filter != "الكل":
+                working_df = df_emp[df_emp['branch_name'] == branch_filter].copy()
+            else:
+                working_df = df_emp.copy()
+
+            # جلب الحركات المسجلة لليوم والفرع المحدد (الاعتماد على التاريخ + رقم الفرع + رقم الصندوق للفصل التام)
             df_saved = pd.read_sql_query("SELECT * FROM daily_audit WHERE audit_date = ?", conn, params=(date_str,))
-            working_df = df_emp.copy()
             
             if not df_saved.empty:
-                df_saved = df_saved.drop_duplicates(subset=['box_no'], keep='last')
-                working_df = pd.merge(working_df, df_saved[['box_no', 'excess', 'shortage', 'status', 'audit_time', 'notes']], on='box_no', how='left')
+                working_df = pd.merge(
+                    working_df, 
+                    df_saved[['branch_no', 'box_no', 'excess', 'shortage', 'status', 'audit_time', 'notes']], 
+                    on=['branch_no', 'box_no'], 
+                    how='left'
+                )
                 working_df.rename(columns={'excess': 'الزيادة', 'shortage': 'النقص', 'status': 'الحالة', 'audit_time': 'الوقت', 'notes': 'الملاحظات'}, inplace=True)
             else:
                 working_df["الزيادة"] = 0.0
@@ -371,15 +379,8 @@ def main_app():
                 "branch_no", "branch_name", "box_no", "employee_name", 
                 "الزيادة", "النقص", "الحالة", "الوقت", "الملاحظات"
             ]]
-
-            branch_filter = st.selectbox("تصفية حسب الفرع:", ["الكل"] + list(df_emp['branch_name'].unique()))
             
-            if branch_filter != "الكل":
-                filtered_df = working_df[working_df['branch_name'] == branch_filter]
-            else:
-                filtered_df = working_df
-            
-            styled_filtered_df = filtered_df.style.map(color_status, subset=['الحالة'])
+            styled_filtered_df = working_df.style.map(color_status, subset=['الحالة'])
 
             edited_df = st.data_editor(
                 styled_filtered_df,
@@ -401,7 +402,7 @@ def main_app():
                 },
                 use_container_width=True,
                 hide_index=True,
-                key=f"audit_editor_{date_str}"
+                key=f"audit_editor_{date_str}_{branch_filter}"
             )
 
             current_time_str = now_local().strftime("%I:%M:%S %p")
@@ -409,13 +410,15 @@ def main_app():
             changed = False
             
             for _, row in edited_df.iterrows():
+                b_no = str(row["branch_no"])
                 box = str(row["box_no"])
                 status_val = row["الحالة"] if row["الحالة"] in ("مطابق", "غير مطابق") else None
                 excess_v = num(row["الزيادة"])
                 shortage_v = num(row["النقص"])
                 notes_v = "" if pd.isna(row["الملاحظات"]) else str(row["الملاحظات"])
 
-                c.execute("SELECT id, audit_time, status, excess, shortage, notes FROM daily_audit WHERE audit_date = ? AND box_no = ?", (date_str, box))
+                # البحث عن السجل بناءً على (التاريخ + رقم الفرع + رقم الصندوق) لضمان الفصل التام بين عمله في الفرعين
+                c.execute("SELECT id, audit_time, status, excess, shortage, notes FROM daily_audit WHERE audit_date = ? AND branch_no = ? AND box_no = ?", (date_str, b_no, box))
                 rec = c.fetchone()
 
                 if status_val:
@@ -424,24 +427,24 @@ def main_app():
                             new_time = current_time_str if (rec[2] != status_val or not rec[1]) else rec[1]
                             c.execute('''UPDATE daily_audit
                                          SET excess=?, shortage=?, status=?, notes=?, audit_time=?
-                                         WHERE audit_date=? AND box_no=?''',
-                                      (excess_v, shortage_v, status_val, notes_v, new_time, date_str, box))
+                                         WHERE audit_date=? AND branch_no=? AND box_no=?''',
+                                      (excess_v, shortage_v, status_val, notes_v, new_time, date_str, b_no, box))
                             changed = True
                     else:
                         c.execute('''INSERT INTO daily_audit (audit_date, branch_no, branch_name, box_no, employee_name, excess, shortage, status, notes, audit_time)
                                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                                  (date_str, str(row["branch_no"]), str(row["branch_name"]), box, str(row["employee_name"]),
+                                  (date_str, b_no, str(row["branch_name"]), box, str(row["employee_name"]),
                                    excess_v, shortage_v, status_val, notes_v, current_time_str))
                         changed = True
                 elif rec:
-                    c.execute("DELETE FROM daily_audit WHERE audit_date = ? AND box_no = ?", (date_str, box))
+                    c.execute("DELETE FROM daily_audit WHERE audit_date = ? AND branch_no = ? AND box_no = ?", (date_str, b_no, box))
                     changed = True
 
             conn.commit()
             if changed:
                 st.rerun()
 
-            st.success(f"⚡ يتم حفظ التعديلات تلقائياً لتاريخ ({date_str}) بشكل فوري!")
+            st.success(f"⚡ يتم حفظ التعديلات تلقائياً لتاريخ ({date_str}) بشكل فوري ومستقل لكل فرع!")
 
             if st.session_state.user_role == "مشرف رئيسي":
                 with st.expander("🧹 مسح تدقيق هذا اليوم (للمشرف)"):
@@ -449,7 +452,6 @@ def main_app():
                     if st.button("مسح الآن") and confirm:
                         conn.execute("DELETE FROM daily_audit WHERE audit_date = ?", (date_str,))
                         conn.commit()
-                        st.session_state.pop(f"audit_editor_{date_str}", None)
                         st.rerun()
 
             st.write("---")
@@ -497,7 +499,8 @@ def main_app():
                 else:
                     c = conn.cursor()
                     for _, r in df_day.iterrows():
-                        c.execute("SELECT id FROM monthly_audit_archive WHERE audit_date = ? AND box_no = ?", (target_date_str, r["box_no"]))
+                        # التحقق من وجود السجل في الأرشيف لنفس التاريخ والفرع والصندوق
+                        c.execute("SELECT id FROM monthly_audit_archive WHERE audit_date = ? AND branch_no = ? AND box_no = ?", (target_date_str, r["branch_no"], r["box_no"]))
                         exists = c.fetchone()
                         if not exists:
                             c.execute('''
@@ -594,10 +597,11 @@ def main_app():
             if df_day_records.empty:
                 st.info(f"⚠️ لا توجد أي سجلات مسجلة لتاريخ ({del_date_str}).")
             else:
-                box_to_delete = st.selectbox("اختر الصندوق أو السجل المراد حذفه:", df_day_records['box_no'].astype(str) + " - " + df_day_records['employee_name'].fillna(''))
+                box_to_delete = st.selectbox("اختر الصندوق أو السجل المراد حذفه:", df_day_records['branch_name'].fillna('') + " - صندوق " + df_day_records['box_no'].astype(str) + " (" + df_day_records['employee_name'].fillna('') + ")")
                 
                 if st.button("🗑️ حذف هذا السجل نهائياً", use_container_width=True):
-                    selected_box_no = box_to_delete.split(" - ")[0]
+                    # استخراج رقم الصندوق والفرع بدقة لحذف السجل الصحيح
+                    selected_box_no = box_to_delete.split("صندوق ")[1].split(" (")[0].strip()
                     conn.execute("DELETE FROM monthly_audit_archive WHERE audit_date = ? AND box_no = ?", (del_date_str, selected_box_no))
                     conn.execute("DELETE FROM daily_audit WHERE audit_date = ? AND box_no = ?", (del_date_str, selected_box_no))
                     conn.commit()
