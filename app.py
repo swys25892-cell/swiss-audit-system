@@ -31,7 +31,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# إعداد قاعدة البيانات مع دعم تكرار الصناديق في فروع مختلفه
+# إعداد قاعدة البيانات وتحديث هيكل الموظفين تلقائياً إذا لزم الأمر
 def init_db():
     conn = sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
     c = conn.cursor()
@@ -68,7 +68,12 @@ def init_db():
         )
     ''')
     
-    # جدول الموظفين والصناديق مع السماح بتكرار رقم الصندوق طالما اختلف الفرع (عبر UNIQUE مركّب)
+    # فحص بنية جدول الموظفين القديمة وإعادة بنائه إذا لم يكن يدعم التكرار عبر الفروع
+    c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='employees'")
+    _row = c.fetchone()
+    if _row and "UNIQUE(branch_no, box_no)" not in (_row[0] or ""):
+        c.execute("DROP TABLE employees")
+        
     c.execute('''
         CREATE TABLE IF NOT EXISTS employees (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -399,7 +404,7 @@ def main_app():
                 },
                 use_container_width=True,
                 hide_index=True,
-                key=f"audit_editor_multibranch_{date_str}_{branch_filter}"
+                key=f"audit_editor_smart_{date_str}_{branch_filter}"
             )
 
             current_time_str = now_local().strftime("%I:%M:%S %p")
@@ -585,21 +590,29 @@ def main_app():
             del_date = st.date_input("تاريخ السجل المراد حذفه", now_local().date(), key="del_date_picker")
             del_date_str = str(del_date)
             
-            df_day_records = pd.read_sql_query("SELECT id, audit_date, branch_name, box_no, employee_name, status FROM monthly_audit_archive WHERE audit_date = ?", conn, params=(del_date_str,))
+            df_day_records = pd.read_sql_query(
+                "SELECT audit_date, branch_no, branch_name, box_no, employee_name FROM monthly_audit_archive WHERE audit_date = ?",
+                conn, params=(del_date_str,))
             if df_day_records.empty:
-                df_day_records = pd.read_sql_query("SELECT id, audit_date, branch_name, box_no, employee_name, status FROM daily_audit WHERE audit_date = ?", conn, params=(del_date_str,))
+                df_day_records = pd.read_sql_query(
+                    "SELECT audit_date, branch_no, branch_name, box_no, employee_name FROM daily_audit WHERE audit_date = ?",
+                    conn, params=(del_date_str,))
             
             if df_day_records.empty:
                 st.info(f"⚠️ لا توجد أي سجلات مسجلة لتاريخ ({del_date_str}).")
             else:
-                box_to_delete = st.selectbox("اختر الصندوق أو السجل المراد حذفه:", df_day_records['branch_name'].fillna('') + " - صندوق " + df_day_records['box_no'].astype(str) + " (" + df_day_records['employee_name'].fillna('') + ")")
-                
+                idx = st.selectbox(
+                    "اختر الصندوق أو السجل المراد حذفه:",
+                    options=list(df_day_records.index),
+                    format_func=lambda i: f"{df_day_records.loc[i, 'branch_name']} - صندوق {df_day_records.loc[i, 'box_no']} ({df_day_records.loc[i, 'employee_name']})"
+                )
                 if st.button("🗑️ حذف هذا السجل نهائياً", use_container_width=True):
-                    selected_box_no = box_to_delete.split("صندوق ")[1].split(" (")[0].strip()
-                    conn.execute("DELETE FROM monthly_audit_archive WHERE audit_date = ? AND box_no = ?", (del_date_str, selected_box_no))
-                    conn.execute("DELETE FROM daily_audit WHERE audit_date = ? AND box_no = ?", (del_date_str, selected_box_no))
+                    r = df_day_records.loc[idx]
+                    for tbl in ("monthly_audit_archive", "daily_audit"):
+                        conn.execute(f"DELETE FROM {tbl} WHERE audit_date = ? AND branch_no = ? AND box_no = ?",
+                                     (del_date_str, r["branch_no"], r["box_no"]))
                     conn.commit()
-                    st.success(f"✅ تم حذف السجل الخاص بالصندوق ({selected_box_no}) لتاريخ ({del_date_str}) بنجاح!")
+                    st.success(f"✅ تم حذف سجل الصندوق ({r['box_no']}) في ({r['branch_name']}) لتاريخ ({del_date_str}).")
                     st.rerun()
 
     elif menu == "👥 قاعدة بيانات الموظفين والصناديق (Google Sheets)":
@@ -617,7 +630,7 @@ def main_app():
                     
         st.write("---")
         st.markdown("##### 📊 السجلات الحالية المخزنة والمحدثة من Google Sheets")
-        df_current = pd.read_sql_query("SELECT * FROM employees", conn)
+        df_current = pd.read_sql_query("SELECT branch_no, branch_name, box_no, employee_name FROM employees", conn)
         if df_current.empty:
             st.info("لا توجد بيانات مسجلة حالياً، اضغط على زر المزامنة أعلاه لتحديث البيانات.")
         else:
