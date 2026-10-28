@@ -9,6 +9,9 @@ import urllib.request
 import arabic_reshaper
 from bidi.algorithm import get_display
 
+# استدعاء دالة عرض التقارير والمؤشرات من الملف المنفصل
+from reports_page import show_reports_page
+
 # تحديد المنطقة الزمنية لمدينة عمّان (الأردن)
 TZ = ZoneInfo("Asia/Amman")
 
@@ -496,8 +499,6 @@ def main_app():
         with col_btn1:
             if st.button("📥 تنفيذ ترحيل حركات اليوم المحدد", use_container_width=True):
                 c = conn.cursor()
-                
-                # 1. جلب كافة الموظفين والصناديق المسجلة في جدول employees
                 c.execute("SELECT branch_no, branch_name, box_no, employee_name FROM employees")
                 all_employees = c.fetchall()
                 
@@ -508,7 +509,6 @@ def main_app():
                     for emp in all_employees:
                         b_no, b_name, box_no, emp_name = emp
                         
-                        # التحقق هل تم تسجيل حركة لهذا الصندوق في هذا التاريخ في daily_audit
                         c.execute("SELECT status, excess, shortage, notes, audit_time FROM daily_audit WHERE audit_date = ? AND branch_no = ? AND box_no = ?", 
                                   (target_date_str, b_no, box_no))
                         daily_rec = c.fetchone()
@@ -516,14 +516,12 @@ def main_app():
                         if daily_rec:
                             status_v, excess_v, shortage_v, notes_v, time_v = daily_rec
                         else:
-                            # إذا لم يتم إدخال حالة (صندوق فارغ)، نرحّله كـ "مجاز" تلقائياً
                             status_v = "مجاز"
                             excess_v = 0.0
                             shortage_v = 0.0
                             notes_v = "ترحيل تلقائي - لم يتم الإدخال"
                             time_v = "تلقائي"
                             
-                        # التحقق من عدم تكرار الترحيل في الأرشيف لنفس التاريخ والفرع والصندوق
                         c.execute("SELECT id FROM monthly_audit_archive WHERE audit_date = ? AND branch_no = ? AND box_no = ?", 
                                   (target_date_str, b_no, box_no))
                         exists_in_archive = c.fetchone()
@@ -778,14 +776,8 @@ def main_app():
                 }), use_container_width=True)
 
     elif menu == "📊 المؤشرات والتقارير الإحصائية":
-        st.subheader("📊 المؤشرات والتقارير العامة للتدقيق")
-        c1, c2, c3 = st.columns(3)
-        df_all = pd.read_sql_query("SELECT * FROM employees", conn)
-        total_boxes = len(df_all)
-        c1.metric("إجمالي الصناديق المسجلة", total_boxes)
-        c2.metric("الصناديق المطابقة", total_boxes)
-        c3.metric("حالات عدم المطابقة", 0)
-        st.info("💡 يتم تحديث المؤشرات تلقائياً بناءً على حركات التدقيق اليومية المسجلة.")
+        # استدعاء دالة التقارير من ملف reports_page.py المنفصل
+        show_reports_page(conn)
 
     conn.close()
 
