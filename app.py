@@ -8,7 +8,7 @@ import urllib.request
 import arabic_reshaper
 from bidi.algorithm import get_display
 
-# رابط CSV المباشر والسريع لورقة بيانات الموظفين والصناديق (gid=1052037948)
+# رابط CSV المباشر لورقة بيانات الموظفين والصناديق
 GOOGLE_SHEETS_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSmavjxMii0NOgfAytcirzipjVzUa6eQJBUui7UgPo4dyeHEl2cFfP-_CcmyQ49Dmr2FDEo_e2Ek8ZY/pub?gid=1052037948&single=true&output=csv"
 
 # إعدادات الصفحة
@@ -96,50 +96,40 @@ init_db()
 def get_db_connection():
     return sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
 
-# دالة ذكية وسريعة لمزامنة بيانات الموظفين من Google Sheets
+# دالة مزامنة دقيقة تعتمد على ترتيب أعمدة ملف الـ Google Sheets الخاص بك
 def sync_employees_from_sheets():
     try:
         df_sheet = pd.read_csv(GOOGLE_SHEETS_CSV_URL)
-        df_sheet.columns = [str(col).strip() for col in df_sheet.columns]
         
-        rename_map = {}
-        for col in df_sheet.columns:
-            col_clean = str(col).strip().lower()
-            if 'صندوق' in col_clean or 'box' in col_clean:
-                rename_map[col] = 'box_no'
-            elif 'موظف' in col_clean or 'employee' in col_clean or ('اسم' in col_clean and 'فرع' not in col_clean):
-                rename_map[col] = 'employee_name'
-            elif 'فرع' in col_clean and ('اسم' in col_clean or 'name' in col_clean or 'current' in col_clean):
-                rename_map[col] = 'branch_name'
-            elif 'فرع' in col_clean and ('رقم' in col_clean or 'no' in col_clean or 'num' in col_clean or 'code' in col_clean):
-                rename_map[col] = 'branch_no'
-                
-        df_sheet.rename(columns=rename_map, inplace=True)
-        
-        for req in ['box_no', 'employee_name', 'branch_name', 'branch_no']:
-            if req not in df_sheet.columns:
-                df_sheet[req] = ""
-                
-        df_sheet = df_sheet[['box_no', 'employee_name', 'branch_name', 'branch_no']].copy()
-        df_sheet.dropna(subset=['box_no'], inplace=True)
+        # التأكد من جلب الأعمده حسب ترتيبها في الشيت (العمود 0: رقم الفرع، العمود 1: اسم الفرع، العمود 2: رقم الصندوق، العمود 3: اسم الموظف)
+        if df_sheet.shape[1] >= 4:
+            df_clean = pd.DataFrame()
+            df_clean['branch_no'] = df_sheet.iloc[:, 0]
+            df_clean['branch_name'] = df_sheet.iloc[:, 1]
+            df_clean['box_no'] = df_sheet.iloc[:, 2]
+            df_clean['employee_name'] = df_sheet.iloc[:, 3]
+        else:
+            return False, "عدد الأعمدة في ملف جوجل شيت أقل من المطلوبة."
+            
+        df_clean.dropna(subset=['box_no'], inplace=True)
         
         for col in ['box_no', 'employee_name', 'branch_name', 'branch_no']:
-            df_sheet[col] = df_sheet[col].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
-            df_sheet[col] = df_sheet[col].replace(['nan', 'None', 'null'], '')
+            df_clean[col] = df_clean[col].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+            df_clean[col] = df_clean[col].replace(['nan', 'None', 'null'], '')
             
-        df_sheet = df_sheet[df_sheet['box_no'] != '']
+        df_clean = df_clean[df_clean['box_no'] != '']
 
         conn = get_db_connection()
         c = conn.cursor()
         c.execute("DELETE FROM employees")
-        for _, row in df_sheet.iterrows():
+        for _, row in df_clean.iterrows():
             c.execute('''
                 INSERT OR REPLACE INTO employees (box_no, employee_name, branch_name, branch_no)
                 VALUES (?, ?, ?, ?)
             ''', (row['box_no'], row['employee_name'], row['branch_name'], row['branch_no']))
         conn.commit()
         conn.close()
-        return True, len(df_sheet)
+        return True, len(df_clean)
     except Exception as e:
         return False, str(e)
 
