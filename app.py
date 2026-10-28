@@ -8,8 +8,8 @@ import urllib.request
 import arabic_reshaper
 from bidi.algorithm import get_display
 
-# رابط CSV المباشر الجديد لصفحة الموظفين وصناديق الفروع
-GOOGLE_SHEETS_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSmavjxMii0NOgfAytcirzipjVzUa6eQJBUui7UgPo4dyeHEl2cFfP-_CcmyQ49Dmr2FDEo_e2Ek8ZY/pub?gid=0&single=true&output=csv"
+# رابط CSV المباشر والسريع لورقة بيانات الموظفين والصناديق (gid=1052037948)
+GOOGLE_SHEETS_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSmavjxMii0NOgfAytcirzipjVzUa6eQJBUui7UgPo4dyeHEl2cFfP-_CcmyQ49Dmr2FDEo_e2Ek8ZY/pub?gid=1052037948&single=true&output=csv"
 
 # إعدادات الصفحة
 st.set_page_config(
@@ -96,10 +96,9 @@ init_db()
 def get_db_connection():
     return sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
 
-# دالة ذكية لمزامنة بيانات الموظفين من Google Sheets وقراءة كافة تسميات الأعمدة المحتملة
+# دالة ذكية وسريعة لمزامنة بيانات الموظفين من Google Sheets
 def sync_employees_from_sheets():
     try:
-        # قراءة البيانات من الرابط المباشر الجديد
         df_sheet = pd.read_csv(GOOGLE_SHEETS_CSV_URL)
         df_sheet.columns = [str(col).strip() for col in df_sheet.columns]
         
@@ -117,16 +116,13 @@ def sync_employees_from_sheets():
                 
         df_sheet.rename(columns=rename_map, inplace=True)
         
-        # التأكد من توفر جميع الحقول المطلوبة
         for req in ['box_no', 'employee_name', 'branch_name', 'branch_no']:
             if req not in df_sheet.columns:
                 df_sheet[req] = ""
                 
-        # تنظيف البيانات واستبعاد الأسطر الفارغة
         df_sheet = df_sheet[['box_no', 'employee_name', 'branch_name', 'branch_no']].copy()
         df_sheet.dropna(subset=['box_no'], inplace=True)
         
-        # تحويل القيم لنصوص وتنظيف المسافات الزائدة
         for col in ['box_no', 'employee_name', 'branch_name', 'branch_no']:
             df_sheet[col] = df_sheet[col].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
             df_sheet[col] = df_sheet[col].replace(['nan', 'None', 'null'], '')
