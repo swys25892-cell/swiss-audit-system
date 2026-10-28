@@ -155,7 +155,7 @@ def ar(text):
         return str(text)
 
 # دالة توليد تقرير PDF
-def generate_pdf_report(df_data, date_str):
+def generate_pdf_report(df_data, report_title):
     font_path = "Amiri-Regular.ttf"
     if not os.path.exists(font_path):
         try:
@@ -181,14 +181,14 @@ def generate_pdf_report(df_data, date_str):
     else:
         pdf.set_font("Arial", size=16)
     
-    pdf.cell(190, 10, text=ar("شركة سويس للصرافة - تقرير التدقيق الداخلي"), new_x="LMARGIN", new_y="NEXT", align='C')
+    pdf.cell(190, 10, text=ar("شركة سويس للصرافة - تقرير التدقيق الداخلي الأرشيفي"), new_x="LMARGIN", new_y="NEXT", align='C')
     
     if os.path.exists(font_path):
         pdf.set_font("Amiri", size=12)
     else:
         pdf.set_font("Arial", size=12)
         
-    pdf.cell(190, 8, text=ar(f"تقرير الحالات غير المطابقة - التاريخ: {date_str}"), new_x="LMARGIN", new_y="NEXT", align='C')
+    pdf.cell(190, 8, text=ar(report_title), new_x="LMARGIN", new_y="NEXT", align='C')
     pdf.ln(8)
     
     if os.path.exists(font_path):
@@ -197,13 +197,14 @@ def generate_pdf_report(df_data, date_str):
         pdf.set_font("Arial", size=9)
         
     headers = [
-        ("الوقت", 28), 
-        ("النقص", 18), 
-        ("الزيادة", 18), 
-        ("اسم الموظف", 42), 
-        ("رقم الصندوق", 22), 
-        ("اسم الفرع", 50), 
-        ("رقم الفرع", 17)
+        ("الوقت", 24), 
+        ("الحالة", 20),
+        ("النقص", 16), 
+        ("الزيادة", 16), 
+        ("اسم الموظف", 40), 
+        ("رقم الصندوق", 20), 
+        ("اسم الفرع", 38), 
+        ("رقم الفرع", 16)
     ]
     for i, (h, w) in enumerate(headers):
         last = i == len(headers) - 1
@@ -211,20 +212,16 @@ def generate_pdf_report(df_data, date_str):
                  new_x="LMARGIN" if last else "RIGHT",
                  new_y="NEXT" if last else "TOP")
     
-    if os.path.exists(font_path):
-        pdf.set_font("Amiri", size=9)
-    else:
-        pdf.set_font("Arial", size=9)
-        
     for _, row in df_data.iterrows():
         values = [
-            (str(row["الوقت"]), 28), 
-            (str(row.get("النقص", 0.0)), 18), 
-            (str(row["الزيادة"]), 18), 
-            (str(row["employee_name"]), 42),
-            (str(row["box_no"]), 22), 
-            (str(row["branch_name"]), 50), 
-            (str(row["branch_no"]), 17)
+            (str(row.get("audit_time", "")), 24),
+            (str(row.get("status", "")), 20),
+            (str(row.get("shortage", 0.0)), 16), 
+            (str(row.get("excess", 0.0)), 16), 
+            (str(row.get("employee_name", "")), 40),
+            (str(row.get("box_no", "")), 20), 
+            (str(row.get("branch_name", "")), 38), 
+            (str(row.get("branch_no", "")), 16)
         ]
         for i, (v, w) in enumerate(values):
             last = i == len(values) - 1
@@ -234,7 +231,7 @@ def generate_pdf_report(df_data, date_str):
     
     return bytes(pdf.output())
 
-# دالة لتلوين الحالة باللون الأخضر أو الأحمر
+# دالة تلوين الحالة (أخضر لـ مطابق، أحمر لـ غير مطابق)
 def color_status(val):
     if val == "مطابق":
         return 'background-color: #d4edda; color: #155724; font-weight: bold;'
@@ -475,7 +472,7 @@ def main_app():
                             use_container_width=True
                         )
                     with col_d2:
-                        pdf_data = generate_pdf_report(df_mismatches, date_str)
+                        pdf_data = generate_pdf_report(df_mismatches, f"تقرير الحالات غير المطابقة ليوم {date_str}")
                         st.download_button(
                             label="📥 تحميل تقرير PDF",
                             data=pdf_data,
@@ -485,8 +482,8 @@ def main_app():
                         )
 
     elif menu == "📁 المطابقات الشهرية والترحيل":
-        st.subheader("📁 أرشيف المطابقات الشهرية والترحيل اليومي")
-        st.caption("من هنا يمكنك ترحيل حركات وتدقيق التاريخ المحدد إلى قاعدة بيانات المطابقات الشهرية.")
+        st.subheader("📁 أرشيف المطابقات الشهرية والترحيل والتقارير المتقدمة")
+        st.caption("من هنا يمكنك ترحيل حركات اليوم، استعراض الأرشيف، تصفية التقارير حسب الفرع أو الصندوق، وتصديرها بصيغة Excel أو PDF.")
         
         target_date = st.date_input("تاريخ اليوم المراد ترحيله وعرضه", now_local().date(), key="archive_date")
         target_date_str = str(target_date)
@@ -512,19 +509,42 @@ def main_app():
                     st.rerun()
         
         st.write("---")
-        st.markdown("##### 📊 جدول أرشيف المطابقات الشهرية والترحيلات المسجلة")
+        st.markdown("##### 📊 استعراض وتصدير تقارير الأرشيف المتقدمة والمخصصة")
         
-        archive_view_mode = st.radio("طريقة عرض الأرشيف:", ["عرض السجلات الخاصة بالتاريخ المختار أعلاه فقط", "عرض كافة سجلات الأرشيف الشهري"], horizontal=True)
+        df_all_archive = pd.read_sql_query("SELECT DISTINCT branch_name, box_no, employee_name FROM monthly_audit_archive", conn)
         
-        if archive_view_mode == "عرض السجلات الخاصة بالتاريخ المختار أعلاه فقط":
-            df_monthly = pd.read_sql_query("SELECT * FROM monthly_audit_archive WHERE audit_date = ?", conn, params=(target_date_str,))
-        else:
-            df_monthly = pd.read_sql_query("SELECT * FROM monthly_audit_archive", conn)
+        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+        with col_f1:
+            start_p_date = st.date_input("من تاريخ", now_local().date(), key="start_p")
+        with col_f2:
+            end_p_date = st.date_input("إلى تاريخ", now_local().date(), key="end_p")
+        with col_f3:
+            branch_options = ["الكل"] + (df_all_archive['branch_name'].dropna().unique().tolist() if not df_all_archive.empty else [])
+            selected_branch_filter = st.selectbox("تصفية حسب الفرع:", branch_options)
+        with col_f4:
+            box_options = ["الكل"] + (df_all_archive['box_no'].dropna().unique().tolist() if not df_all_archive.empty else [])
+            selected_box_filter = st.selectbox("تصفية حسب رقم الصندوق:", box_options)
 
-        if df_monthly.empty:
-            st.info(f"لا توجد سجلات مرحلة مطابقة لتاريخ ({target_date_str}) في الأرشيف الشهري.")
+        query = "SELECT * FROM monthly_audit_archive WHERE audit_date BETWEEN ? AND ?"
+        params = [str(start_p_date), str(end_p_date)]
+        
+        if selected_branch_filter != "الكل":
+            query += " AND branch_name = ?"
+            params.append(selected_branch_filter)
+            
+        if selected_box_filter != "الكل":
+            query += " AND box_no = ?"
+            params.append(selected_box_filter)
+            
+        df_export = pd.read_sql_query(query, conn, params=params)
+        report_title_str = f"تقرير الفترة من {start_p_date} إلى {end_p_date} (فرع: {selected_branch_filter}, صندوق: {selected_box_filter})"
+
+        if df_export.empty:
+            st.info("⚠️ لا توجد سجلات مطابقة لمعايير البحث المحددة في الأرشيف.")
         else:
-            df_styled = df_monthly.rename(columns={
+            st.success(f"✅ تم العثور على ({len(df_export)}) سجل تطابق خيارات الفلترة المطلوبة.")
+            
+            df_styled_view = df_export.rename(columns={
                 "audit_date": "التاريخ",
                 "branch_no": "رقم الفرع",
                 "branch_name": "اسم الفرع",
@@ -536,7 +556,53 @@ def main_app():
                 "audit_time": "الوقت",
                 "notes": "الملاحظات"
             }).style.map(color_status, subset=['الحالة'])
-            st.dataframe(df_styled, use_container_width=True)
+            
+            st.dataframe(df_styled_view, use_container_width=True)
+            
+            st.markdown("##### 📥 تصدير وطباعة التقرير المخصص:")
+            col_exp1, col_exp2 = st.columns(2)
+            
+            with col_exp1:
+                excel_data = df_export.to_csv(index=False).encode('utf-8-sig')
+                st.download_button(
+                    label="📊 تحميل كملف Excel / CSV",
+                    data=excel_data,
+                    file_name=f"custom_audit_report.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+                    
+            with col_exp2:
+                pdf_archive_data = generate_pdf_report(df_export, report_title_str)
+                st.download_button(
+                    label="📄 تحميل كملف PDF",
+                    data=pdf_archive_data,
+                    file_name=f"custom_audit_report.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+
+        st.write("---")
+        with st.expander("🗑️ إدارة وحذف سجل تجريبي أو خاطئ محدد"):
+            del_date = st.date_input("تاريخ السجل المراد حذفه", now_local().date(), key="del_date_picker")
+            del_date_str = str(del_date)
+            
+            df_day_records = pd.read_sql_query("SELECT id, audit_date, branch_name, box_no, employee_name, status FROM monthly_audit_archive WHERE audit_date = ?", conn, params=(del_date_str,))
+            if df_day_records.empty:
+                df_day_records = pd.read_sql_query("SELECT id, audit_date, branch_name, box_no, employee_name, status FROM daily_audit WHERE audit_date = ?", conn, params=(del_date_str,))
+            
+            if df_day_records.empty:
+                st.info(f"⚠️ لا توجد أي سجلات مسجلة لتاريخ ({del_date_str}).")
+            else:
+                box_to_delete = st.selectbox("اختر الصندوق أو السجل المراد حذفه:", df_day_records['box_no'].astype(str) + " - " + df_day_records['employee_name'].fillna(''))
+                
+                if st.button("🗑️ حذف هذا السجل نهائياً", use_container_width=True):
+                    selected_box_no = box_to_delete.split(" - ")[0]
+                    conn.execute("DELETE FROM monthly_audit_archive WHERE audit_date = ? AND box_no = ?", (del_date_str, selected_box_no))
+                    conn.execute("DELETE FROM daily_audit WHERE audit_date = ? AND box_no = ?", (del_date_str, selected_box_no))
+                    conn.commit()
+                    st.success(f"✅ تم حذف السجل الخاص بالصندوق ({selected_box_no}) لتاريخ ({del_date_str}) بنجاح!")
+                    st.rerun()
 
     elif menu == "👥 قاعدة بيانات الموظفين والصناديق (Google Sheets)":
         st.subheader("👥 إدارة قاعدة بيانات الموظفين والصناديق والفروع")
