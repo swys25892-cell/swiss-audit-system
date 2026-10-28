@@ -8,6 +8,9 @@ import urllib.request
 import arabic_reshaper
 from bidi.algorithm import get_display
 
+# رابط CSV الخاص بجدول الموظفين على Google Sheets
+GOOGLE_SHEETS_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSmavjxMii0NOgfAytcirzipjVzUa6eQJBUui7UgPo4dyeHEl2cFfP-_CcmyQ49Dmr2FDEo_e2Ek8ZY/pub?output=csv"
+
 # إعدادات الصفحة
 st.set_page_config(
     page_title="نظام التدقيق الداخلي - شركة سويس للصرافة",
@@ -93,6 +96,53 @@ init_db()
 def get_db_connection():
     return sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
 
+# دالة مزامنة بيانات الموظفين من Google Sheets
+def sync_employees_from_sheets():
+    try:
+        df_sheet = pd.read_csv(GOOGLE_SHEETS_CSV_URL)
+        df_sheet.columns = [str(col).strip() for col in df_sheet.columns]
+        
+        # خريطة توحيد أسماء الأعمدة القادمة من جوجل شيت
+        rename_map = {}
+        for col in df_sheet.columns:
+            col_lower = col.lower()
+            if 'صندوق' in col or 'box' in col_lower:
+                rename_map[col] = 'box_no'
+            elif 'موظف' in col or 'employee' in col_lower or 'اسم' in col:
+                rename_map[col] = 'employee_name'
+            elif 'فرع' in col and ('اسم' in col or 'name' in col_lower):
+                rename_map[col] = 'branch_name'
+            elif 'فرع' in col and ('رقم' in col or 'no' in col_lower or 'num' in col_lower):
+                rename_map[col] = 'branch_no'
+                
+        df_sheet.rename(columns=rename_map, inplace=True)
+        
+        # التأكد من وجود كافة الأعمدة المطلوبة
+        required_cols = ['box_no', 'employee_name', 'branch_name', 'branch_no']
+        for c_req in required_cols:
+            if c_req not in df_sheet.columns:
+                df_sheet[c_req] = ""
+                
+        df_sheet = df_sheet[required_cols].dropna(subset=['box_no'])
+        df_sheet['box_no'] = df_sheet['box_no'].astype(str)
+        df_sheet['employee_name'] = df_sheet['employee_name'].astype(str)
+        df_sheet['branch_name'] = df_sheet['branch_name'].astype(str)
+        df_sheet['branch_no'] = df_sheet['branch_no'].astype(str)
+
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute("DELETE FROM employees")
+        for _, row in df_sheet.iterrows():
+            c.execute('''
+                INSERT OR REPLACE INTO employees (box_no, employee_name, branch_name, branch_no)
+                VALUES (?, ?, ?, ?)
+            ''', (row['box_no'].strip(), row['employee_name'].strip(), row['branch_name'].strip(), row['branch_no'].strip()))
+        conn.commit()
+        conn.close()
+        return True, len(df_sheet)
+    except Exception as e:
+        return False, str(e)
+
 def ar(text):
     if not text:
         return ""
@@ -103,7 +153,7 @@ def ar(text):
     except:
         return str(text)
 
-# دالة توليد تقرير PDF مع إضافة عامود النقص
+# دالة توليد تقرير PDF مع إدراج شعار الشركة وعامود النقص
 def generate_pdf_report(df_data, date_str):
     font_path = "Amiri-Regular.ttf"
     if not os.path.exists(font_path):
@@ -140,7 +190,6 @@ def generate_pdf_report(df_data, date_str):
     pdf.cell(190, 8, text=ar(f"تقرير الحالات غير المطابقة - التاريخ: {date_str}"), new_x="LMARGIN", new_y="NEXT", align='C')
     pdf.ln(8)
     
-    # رؤوس الأعمدة مع إضافة "النقص" وتوزيع العروض بدقة لتناسب صفحة A4
     if os.path.exists(font_path):
         pdf.set_font("Amiri", size=9)
     else:
@@ -184,7 +233,7 @@ def generate_pdf_report(df_data, date_str):
     
     return bytes(pdf.output())
 
-# حالة تسجيل الدخول وباقي التطبيق
+# حالة تسجيل الدخول
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "username" not in st.session_state:
@@ -246,7 +295,7 @@ def main_app():
     menu_options = [
         "📋 لوحة المتابعة والتدقيق اليومي", 
         "📁 المطابقات الشهرية والترحيل",
-        "👥 قاعدة بيانات الموظفين والصناديق",
+        "👥 قاعدة بيانات الموظفين والصناديق (Google Sheets)",
         "🔐 تغيير كلمة المرور الشخصية",
         "📊 المؤشرات والتقارير الإحصائية"
     ]
@@ -281,7 +330,13 @@ def main_app():
         df_emp = pd.read_sql_query("SELECT * FROM employees", conn)
         
         if df_emp.empty:
-            st.warning("⚠️ تنبيه: يرجى أولاً إدخال بيانات الموظفين والصناديق من قائمة (قاعدة بيانات الموظفين والصناديق).")
+            st.warning("⚠️ لا توجد بيانات موظفين مسجلة في قاعدة البيانات، جاري سحب البيانات تلقائياً من Google Sheets...")
+            success, info = sync_employees_from_sheets()
+            if success:
+                st.success(f"✅ تم سحب ({info}) سجل من Google Sheets بنجاح!")
+                st.rerun()
+            else:
+                st.error(f"⚠️ تعذر سحب البيانات من Google Sheets: {info}")
         else:
             df_saved = pd.read_sql_query("SELECT * FROM daily_audit WHERE audit_date = ?", conn, params=(date_str,))
             working_df = df_emp.copy()
@@ -440,49 +495,31 @@ def main_app():
                 "notes": "الملاحظات"
             }), use_container_width=True)
 
-    elif menu == "👥 قاعدة بيانات الموظفين والصناديق":
+    elif menu == "👥 قاعدة بيانات الموظفين والصناديق (Google Sheets)":
         st.subheader("👥 إدارة قاعدة بيانات الموظفين والصناديق والفروع")
-        st.caption("إضافة أو تعديل الصناديق وأسماء الموظفين وتوزيعهم على الفروع كما في جداول الشركة.")
+        st.caption("البيانات مرتبطة تلقائياً وبشكل حي مع ملف Google Sheets الخاص بشركة سويس للصرافة.")
         
-        col1, col2 = st.columns([1, 1.2])
-        with col1:
-            with st.form("add_emp_form"):
-                b_no = st.text_input("رقم الفرع (مثال: 2)")
-                b_name = st.text_input("اسم الفرع (مثال: فرع تلاع العلي)")
-                box_num = st.text_input("رقم الصندوق (مثال: 7046)")
-                emp_n = st.text_input("اسم الموظف")
-                
-                save_btn = st.form_submit_button("إضافة / تحديث الصندوق والموظف", use_container_width=True)
-                
-                if save_btn:
-                    if box_num and emp_n and b_name:
-                        c = conn.cursor()
-                        c.execute('''
-                            INSERT INTO employees (box_no, employee_name, branch_name, branch_no)
-                            VALUES (?, ?, ?, ?)
-                            ON CONFLICT(box_no) DO UPDATE SET
-                                employee_name = excluded.employee_name,
-                                branch_name = excluded.branch_name,
-                                branch_no = excluded.branch_no
-                        ''', (box_num.strip(), emp_n.strip(), b_name.strip(), b_no.strip()))
-                        conn.commit()
-                        st.success(f"تم حفظ الصندوق ({box_num}) للموظف ({emp_n}) بنجاح!")
-                        st.rerun()
-                    else:
-                        st.error("يرجى ملء الحقول الأساسية (رقم الصندوق، اسم الموظف، اسم الفرع).")
-                        
-        with col2:
-            st.markdown("##### 📊 السجلات الحالية في قاعدة البيانات")
-            df_current = pd.read_sql_query("SELECT * FROM employees", conn)
-            if df_current.empty:
-                st.info("لا توجد بيانات مسجلة حتى الآن.")
-            else:
-                st.dataframe(df_current.rename(columns={
-                    "box_no": "رقم الصندوق",
-                    "employee_name": "اسم الموظف",
-                    "branch_name": "اسم الفرع",
-                    "branch_no": "رقم الفرع"
-                }), use_container_width=True)
+        if st.button("🔄 مزامنة وتحديث البيانات من Google Sheets الآن", use_container_width=True):
+            with st.spinner("جاري الاتصال بـ Google Sheets وتحديث البيانات..."):
+                success, info = sync_employees_from_sheets()
+                if success:
+                    st.success(f"✅ تم المزامنة بنجاح! تم تحديث ({info}) سجل موظف وصندوق.")
+                    st.rerun()
+                else:
+                    st.error(f"❌ تعذرت المزامنة: {info}")
+                    
+        st.write("---")
+        st.markdown("##### 📊 السجلات الحالية المخزنة والمحدثة من Google Sheets")
+        df_current = pd.read_sql_query("SELECT * FROM employees", conn)
+        if df_current.empty:
+            st.info("لا توجد بيانات مسجلة حالياً، اضغط على زر المزامنة أعلاه لتحديث البيانات.")
+        else:
+            st.dataframe(df_current.rename(columns={
+                "box_no": "رقم الصندوق",
+                "employee_name": "اسم الموظف",
+                "branch_name": "اسم الفرع",
+                "branch_no": "رقم الفرع"
+            }), use_container_width=True)
 
     elif menu == "🔐 تغيير كلمة المرور الشخصية":
         st.subheader("🔐 تغيير كلمة المرور الخاصة بحسابك")
