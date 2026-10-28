@@ -221,7 +221,7 @@ def generate_pdf_report(df_data, date_str):
     
     return bytes(pdf.output())
 
-# دالة لتلوين خلايا الجدول بالحsأخضر والأحمر بناءً على الحالة
+# دالة تلوين الحالة (أخضر لـ مطابق، أحمر لـ غير مطابق) باستخدام map بدلاً من applymap المتوافقة مع كافة إصدارات Pandas
 def color_status(val):
     if val == "مطابق":
         return 'background-color: #d4edda; color: #155724; font-weight: bold;'
@@ -366,8 +366,8 @@ def main_app():
             else:
                 filtered_df = working_df
             
-            # تطبيق التلوين المباشر للحالة في الجدول المنسدل
-            styled_filtered_df = filtered_df.style.applymap(color_status, subset=['الحالة'])
+            # استخدام map بدلاً من applymap لضمان التوافق التام والتلوين بدون أخطاء
+            styled_filtered_df = filtered_df.style.map(color_status, subset=['الحالة'])
 
             edited_df = st.data_editor(
                 styled_filtered_df,
@@ -402,7 +402,6 @@ def main_app():
                     if existing_rec:
                         old_time = existing_rec[1]
                         old_status = existing_rec[2]
-                        # تحديث الوقت فقط إذا تغيرت الحالة أو لم يكن هناك وقت مسجل مسبقاً
                         new_time = current_time_str if (old_status != status_val or not old_time) else old_time
                         
                         c.execute('''
@@ -416,7 +415,7 @@ def main_app():
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (date_str, str(row["branch_no"]), str(row["branch_name"]), box, str(row["employee_name"]), float(row["الزيادة"]), float(row["النقص"]), status_val, str(row["الملاحظات"]), current_time_str))
                 else:
-                    # تفريغ وسحْب الحالة والوقت نهائياً في حال قام المدقق بإزالتها
+                    # تفريغ وسحب الحالة والوقت نهائياً في حال قام المدقق بإزالتها أو إرجاعها فارغة
                     if existing_rec:
                         c.execute("DELETE FROM daily_audit WHERE audit_date = ? AND box_no = ?", (date_str, box))
                         
@@ -503,7 +502,7 @@ def main_app():
                 "status": "الحالة",
                 "audit_time": "الوقت",
                 "notes": "الملاحظات"
-            }).style.applymap(color_status, subset=['الحالة'])
+            }).style.map(color_status, subset=['الحالة'])
             st.dataframe(df_styled, use_container_width=True)
 
     elif menu == "👥 قاعدة بيانات الموظفين والصناديق (Google Sheets)":
