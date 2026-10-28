@@ -31,11 +31,12 @@ st.set_page_config(
     layout="wide"
 )
 
-# إعداد قاعدة البيانات الداخلية الجديدة (v2) لتجنب أي تداخل قديم
+# إعداد قاعدة البيانات الثابتة مع التحديث الآلي الهيكلي (Migration) لمنع فقدان البيانات
 def init_db():
-    conn = sqlite3.connect('swiss_audit_system_v2.db', check_same_thread=False)
+    conn = sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
     c = conn.cursor()
     
+    # إنشاء الجداول الأساسية إن لم تكن موجودة
     c.execute('''
         CREATE TABLE IF NOT EXISTS daily_audit (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,19 +87,30 @@ def init_db():
         )
     ''')
     
+    # التأكد من وجود حساب المشرف الرئيسي فقط إن كانت الجدول فارغاً تماماً
     c.execute("SELECT COUNT(*) FROM users")
     if c.fetchone()[0] == 0:
-        c.execute("INSERT INTO users (username, password, role, full_name) VALUES (?, ?, ?, ?)", 
+        c.execute("INSERT OR IGNORE INTO users (username, password, role, full_name) VALUES (?, ?, ?, ?)", 
                   ("ADMIN", "1234", "مشرف رئيسي", "مدير النظام"))
         conn.commit()
         
+    # فحص الأعمدة وإضافتها تلقائياً إن لم تكن موجودة لتفادي أي أخطاء أو فقدان
+    for table_name in ['daily_audit', 'monthly_audit_archive']:
+        c.execute(f"PRAGMA table_info({table_name})")
+        columns = [col[1] for col in c.fetchall()]
+        if 'branch_no' not in columns:
+            try:
+                c.execute(f"ALTER TABLE {table_name} ADD COLUMN branch_no TEXT")
+            except:
+                pass
+
     conn.commit()
     conn.close()
 
 init_db()
 
 def get_db_connection():
-    return sqlite3.connect('swiss_audit_system_v2.db', check_same_thread=False)
+    return sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
 
 # دالة مزامنة بيانات الموظفين من Google Sheets
 def sync_employees_from_sheets():
@@ -396,7 +408,7 @@ def main_app():
                 },
                 use_container_width=True,
                 hide_index=True,
-                key=f"audit_editor_v2_{date_str}_{branch_filter}"
+                key=f"audit_editor_fixed_{date_str}_{branch_filter}"
             )
 
             current_time_str = now_local().strftime("%I:%M:%S %p")
