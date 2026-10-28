@@ -68,7 +68,6 @@ def init_db():
         )
     ''')
     
-    # فحص بنية جدول الموظفين القديمة وإعادة بنائه إذا لم يكن يدعم التكرار عبر الفروع
     c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='employees'")
     _row = c.fetchone()
     if _row and "UNIQUE(branch_no, box_no)" not in (_row[0] or ""):
@@ -230,12 +229,14 @@ def generate_pdf_report(df_data, report_title):
     
     return bytes(pdf.output())
 
-# دالة تلوين الحالة (أخضر لـ مطابق، أحمر لـ غير مطابق)
+# دالة تلوين الحالة (أخضر لـ مطابق، أحمر لـ غير مطابق، وأزرق لـ مجاز)
 def color_status(val):
     if val == "مطابق":
         return 'background-color: #d4edda; color: #155724; font-weight: bold;'
     elif val == "غير مطابق":
         return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+    elif val == "مجاز":
+        return 'background-color: #cce5ff; color: #004085; font-weight: bold;'
     return ''
 
 # حالة تسجيل الدخول
@@ -374,7 +375,7 @@ def main_app():
             working_df["الملاحظات"] = working_df["الملاحظات"].fillna("")
             
             working_df["الحالة"] = working_df["الحالة"].where(
-                working_df["الحالة"].isin(["مطابق", "غير مطابق"]), None
+                working_df["الحالة"].isin(["مطابق", "غير مطابق", "مجاز"]), None
             )
 
             working_df = working_df[[
@@ -395,7 +396,7 @@ def main_app():
                     "النقص": "النقص",
                     "الحالة": st.column_config.SelectboxColumn(
                         "الحالة ▼ (اختر)",
-                        options=["مطابق", "غير مطابق"],
+                        options=["مطابق", "غير مطابق", "مجاز"],
                         required=False,
                         help="اضغط على الخلية لاختيار الحالة، ولحذفها اختر الخلية واضغط Delete",
                     ),
@@ -404,7 +405,7 @@ def main_app():
                 },
                 use_container_width=True,
                 hide_index=True,
-                key=f"audit_editor_smart_{date_str}_{branch_filter}"
+                key=f"audit_editor_leave_{date_str}_{branch_filter}"
             )
 
             current_time_str = now_local().strftime("%I:%M:%S %p")
@@ -414,7 +415,7 @@ def main_app():
             for _, row in edited_df.iterrows():
                 b_no = str(row["branch_no"])
                 box = str(row["box_no"])
-                status_val = row["الحالة"] if row["الحالة"] in ("مطابق", "غير مطابق") else None
+                status_val = row["الحالة"] if row["الحالة"] in ("مطابق", "غير مطابق", "مجاز") else None
                 excess_v = num(row["الزيادة"])
                 shortage_v = num(row["النقص"])
                 notes_v = "" if pd.isna(row["الملاحظات"]) else str(row["الملاحظات"])
@@ -486,7 +487,7 @@ def main_app():
 
     elif menu == "📁 المطابقات الشهرية والترحيل":
         st.subheader("📁 أرشيف المطابقات الشهرية والترحيل والتقارير المتقدمة")
-        st.caption("من هنا يمكنك ترحيل حركات اليوم، استعراض الأرشيف، تصفية التقارير حسب الفرع أو الصندوق، وتصديرها بصيغة Excel أو PDF.")
+        st.caption("من هنا يمكنك ترحيل حركات اليوم (مع ترحيل الصناديق غير المدققة تلقائياً كـ 'مجاز'), استعراض الأرشيف، وتصدير التقارير.")
         
         target_date = st.date_input("تاريخ اليوم المراد ترحيله وعرضه", now_local().date(), key="archive_date")
         target_date_str = str(target_date)
@@ -494,21 +495,48 @@ def main_app():
         col_btn1, col_btn2 = st.columns([1, 2])
         with col_btn1:
             if st.button("📥 تنفيذ ترحيل حركات اليوم المحدد", use_container_width=True):
-                df_day = pd.read_sql_query("SELECT * FROM daily_audit WHERE audit_date = ?", conn, params=(target_date_str,))
-                if df_day.empty:
-                    st.warning(f"⚠️ لا توجد حركات مسجلة لتاريخ ({target_date_str}) ليتم ترحيلها.")
+                c = conn.cursor()
+                
+                # 1. جلب كافة الموظفين والصناديق المسجلة في جدول employees
+                c.execute("SELECT branch_no, branch_name, box_no, employee_name FROM employees")
+                all_employees = c.fetchall()
+                
+                if not all_employees:
+                    st.warning("⚠️ لا توجد بيانات موظفين مسجلة في النظام.")
                 else:
-                    c = conn.cursor()
-                    for _, r in df_day.iterrows():
-                        c.execute("SELECT id FROM monthly_audit_archive WHERE audit_date = ? AND branch_no = ? AND box_no = ?", (target_date_str, r["branch_no"], r["box_no"]))
-                        exists = c.fetchone()
-                        if not exists:
+                    migrated_count = 0
+                    for emp in all_employees:
+                        b_no, b_name, box_no, emp_name = emp
+                        
+                        # التحقق هل تم تسجيل حركة لهذا الصندوق في هذا التاريخ في daily_audit
+                        c.execute("SELECT status, excess, shortage, notes, audit_time FROM daily_audit WHERE audit_date = ? AND branch_no = ? AND box_no = ?", 
+                                  (target_date_str, b_no, box_no))
+                        daily_rec = c.fetchone()
+                        
+                        if daily_rec:
+                            status_v, excess_v, shortage_v, notes_v, time_v = daily_rec
+                        else:
+                            # إذا لم يتم إدخال حالة (صندوق فارغ)، نرحّله كـ "مجاز" تلقائياً
+                            status_v = "مجاز"
+                            excess_v = 0.0
+                            shortage_v = 0.0
+                            notes_v = "ترحيل تلقائي - لم يتم الإدخال"
+                            time_v = "تلقائي"
+                            
+                        # التحقق من عدم تكرار الترحيل في الأرشيف لنفس التاريخ والفرع والصندوق
+                        c.execute("SELECT id FROM monthly_audit_archive WHERE audit_date = ? AND branch_no = ? AND box_no = ?", 
+                                  (target_date_str, b_no, box_no))
+                        exists_in_archive = c.fetchone()
+                        
+                        if not exists_in_archive:
                             c.execute('''
                                 INSERT INTO monthly_audit_archive (audit_date, branch_no, branch_name, box_no, employee_name, excess, shortage, status, notes, audit_time)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            ''', (r["audit_date"], r["branch_no"], r["branch_name"], r["box_no"], r["employee_name"], r["excess"], r["shortage"], r["status"], r["notes"], r["audit_time"]))
+                            ''', (target_date_str, b_no, b_name, box_no, emp_name, excess_v, shortage_v, status_v, notes_v, time_v))
+                            migrated_count += 1
+                            
                     conn.commit()
-                    st.success(f"✅ تم ترحيل حركات تاريخ ({target_date_str}) إلى أرشيف المطابقات الشهرية بنجاح تام!")
+                    st.success(f"✅ تم ترحيل ({migrated_count}) سجلاً لتاريخ ({target_date_str}) بنجاح تام! (تم اعتماد الصناديق الفارغة كـ 'مجاز' تلقائياً)")
                     st.rerun()
         
         st.write("---")
