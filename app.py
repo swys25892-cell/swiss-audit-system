@@ -2,11 +2,24 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from fpdf import FPDF
 import os
 import urllib.request
 import arabic_reshaper
 from bidi.algorithm import get_display
+
+# تحديد المنطقة الزمنية لمدينة عمّان (الأردن)
+TZ = ZoneInfo("Asia/Amman")
+
+def now_local():
+    return datetime.now(TZ)
+
+def num(x):
+    try:
+        return 0.0 if pd.isna(x) else float(x)
+    except:
+        return 0.0
 
 # رابط CSV المباشر لورقة بيانات الموظفين والصناديق
 GOOGLE_SHEETS_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSmavjxMii0NOgfAytcirzipjVzUa6eQJBUui7UgPo4dyeHEl2cFfP-_CcmyQ49Dmr2FDEo_e2Ek8ZY/pub?gid=1052037948&single=true&output=csv"
@@ -221,7 +234,7 @@ def generate_pdf_report(df_data, date_str):
     
     return bytes(pdf.output())
 
-# دالة تلوين الحالة (أخضر لـ مطابق، أحمر لـ غير مطابق) باستخدام map بدلاً من applymap المتوافقة مع كافة إصدارات Pandas
+# دالة لتلوين الحالة باللون الأخضر أو الأحمر
 def color_status(val):
     if val == "مطابق":
         return 'background-color: #d4edda; color: #155724; font-weight: bold;'
@@ -320,7 +333,7 @@ def main_app():
     if menu == "📋 لوحة المتابعة والتدقيق اليومي":
         st.subheader("📋 جدول المتابعة والتدقيق اليومي للحركات (مرتبط بالتاريخ)")
         
-        selected_date = st.date_input("تاريخ التدقيق المطلوب", datetime.now())
+        selected_date = st.date_input("تاريخ التدقيق المطلوب", now_local().date())
         date_str = str(selected_date)
         
         df_emp = pd.read_sql_query("SELECT * FROM employees", conn)
@@ -350,9 +363,12 @@ def main_app():
 
             working_df["الزيادة"] = working_df["الزيادة"].fillna(0.0)
             working_df["النقص"] = working_df["النقص"].fillna(0.0)
-            working_df["الحالة"] = working_df["الحالة"].fillna("")
             working_df["الوقت"] = working_df["الوقت"].fillna("")
             working_df["الملاحظات"] = working_df["الملاحظات"].fillna("")
+            
+            working_df["الحالة"] = working_df["الحالة"].where(
+                working_df["الحالة"].isin(["مطابق", "غير مطابق"]), None
+            )
 
             working_df = working_df[[
                 "branch_no", "branch_name", "box_no", "employee_name", 
@@ -366,7 +382,6 @@ def main_app():
             else:
                 filtered_df = working_df
             
-            # استخدام map بدلاً من applymap لضمان التوافق التام والتلوين بدون أخطاء
             styled_filtered_df = filtered_df.style.map(color_status, subset=['الحالة'])
 
             edited_df = st.data_editor(
@@ -378,7 +393,12 @@ def main_app():
                     "employee_name": st.column_config.TextColumn("اسم الموظف", disabled=True),
                     "الزيادة": "الزيادة",
                     "النقص": "النقص",
-                    "الحالة": st.column_config.SelectboxColumn("الحالة", options=["", "مطابق", "غير مطابق"], required=False),
+                    "الحالة": st.column_config.SelectboxColumn(
+                        "الحالة ▼ (اختر)",
+                        options=["مطابق", "غير مطابق"],
+                        required=False,
+                        help="اضغط على الخلية لاختيار الحالة، ولحذفها اختر الخلية واضغط Delete",
+                    ),
                     "الوقت": st.column_config.TextColumn("الوقت", disabled=True),
                     "الملاحظات": "الملاحظات"
                 },
@@ -387,40 +407,53 @@ def main_app():
                 key=f"audit_editor_{date_str}"
             )
 
-            # وقت الجهاز الفعلي والدقيق
-            current_time_str = datetime.now().strftime("%I:%M:%S %p")
+            current_time_str = now_local().strftime("%I:%M:%S %p")
             c = conn.cursor()
+            changed = False
             
-            for index, row in edited_df.iterrows():
+            for _, row in edited_df.iterrows():
                 box = str(row["box_no"])
-                status_val = str(row["الحالة"]).strip()
-                
-                c.execute("SELECT id, audit_time, status FROM daily_audit WHERE audit_date = ? AND box_no = ?", (date_str, box))
-                existing_rec = c.fetchone()
-                
-                if status_val in ["مطابق", "غير مطابق"]:
-                    if existing_rec:
-                        old_time = existing_rec[1]
-                        old_status = existing_rec[2]
-                        new_time = current_time_str if (old_status != status_val or not old_time) else old_time
-                        
-                        c.execute('''
-                            UPDATE daily_audit 
-                            SET excess = ?, shortage = ?, status = ?, notes = ?, audit_time = ?
-                            WHERE audit_date = ? AND box_no = ?
-                        ''', (float(row["الزيادة"]), float(row["النقص"]), status_val, str(row["الملاحظات"]), new_time, date_str, box))
+                status_val = row["الحالة"] if row["الحالة"] in ("مطابق", "غير مطابق") else None
+                excess_v = num(row["الزيادة"])
+                shortage_v = num(row["النقص"])
+                notes_v = "" if pd.isna(row["الملاحظات"]) else str(row["الملاحظات"])
+
+                c.execute("SELECT id, audit_time, status, excess, shortage, notes FROM daily_audit WHERE audit_date = ? AND box_no = ?", (date_str, box))
+                rec = c.fetchone()
+
+                if status_val:
+                    if rec:
+                        if (rec[2], rec[3], rec[4], rec[5] or "") != (status_val, excess_v, shortage_v, notes_v):
+                            new_time = current_time_str if (rec[2] != status_val or not rec[1]) else rec[1]
+                            c.execute('''UPDATE daily_audit
+                                         SET excess=?, shortage=?, status=?, notes=?, audit_time=?
+                                         WHERE audit_date=? AND box_no=?''',
+                                      (excess_v, shortage_v, status_val, notes_v, new_time, date_str, box))
+                            changed = True
                     else:
-                        c.execute('''
-                            INSERT INTO daily_audit (audit_date, branch_no, branch_name, box_no, employee_name, excess, shortage, status, notes, audit_time)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ''', (date_str, str(row["branch_no"]), str(row["branch_name"]), box, str(row["employee_name"]), float(row["الزيادة"]), float(row["النقص"]), status_val, str(row["الملاحظات"]), current_time_str))
-                else:
-                    # تفريغ وسحب الحالة والوقت نهائياً في حال قام المدقق بإزالتها أو إرجاعها فارغة
-                    if existing_rec:
-                        c.execute("DELETE FROM daily_audit WHERE audit_date = ? AND box_no = ?", (date_str, box))
-                        
+                        c.execute('''INSERT INTO daily_audit (audit_date, branch_no, branch_name, box_no, employee_name, excess, shortage, status, notes, audit_time)
+                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                                  (date_str, str(row["branch_no"]), str(row["branch_name"]), box, str(row["employee_name"]),
+                                   excess_v, shortage_v, status_val, notes_v, current_time_str))
+                        changed = True
+                elif rec:
+                    c.execute("DELETE FROM daily_audit WHERE audit_date = ? AND box_no = ?", (date_str, box))
+                    changed = True
+
             conn.commit()
+            if changed:
+                st.rerun()
+
             st.success(f"⚡ يتم حفظ التعديلات تلقائياً لتاريخ ({date_str}) بشكل فوري!")
+
+            if st.session_state.user_role == "مشرف رئيسي":
+                with st.expander("🧹 مسح تدقيق هذا اليوم (للمشرف)"):
+                    confirm = st.checkbox("أؤكد مسح كل حالات هذا التاريخ")
+                    if st.button("مسح الآن") and confirm:
+                        conn.execute("DELETE FROM daily_audit WHERE audit_date = ?", (date_str,))
+                        conn.commit()
+                        st.session_state.pop(f"audit_editor_{date_str}", None)
+                        st.rerun()
 
             st.write("---")
             if st.button("🚨 استخراج تقرير الحالات غير المطابقة ليوم " + date_str, use_container_width=True):
@@ -455,7 +488,7 @@ def main_app():
         st.subheader("📁 أرشيف المطابقات الشهرية والترحيل اليومي")
         st.caption("من هنا يمكنك ترحيل حركات وتدقيق التاريخ المحدد إلى قاعدة بيانات المطابقات الشهرية.")
         
-        target_date = st.date_input("تاريخ اليوم المراد ترحيله وعرضه", datetime.now(), key="archive_date")
+        target_date = st.date_input("تاريخ اليوم المراد ترحيله وعرضه", now_local().date(), key="archive_date")
         target_date_str = str(target_date)
         
         col_btn1, col_btn2 = st.columns([1, 2])
