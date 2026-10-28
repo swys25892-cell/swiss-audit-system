@@ -156,7 +156,7 @@ def ar(text):
     except:
         return str(text)
 
-# دالة توليد تقرير PDF
+# دالة توليد تقرير PDF مع دعم القراءة المزدوجة للأعمدة
 def generate_pdf_report(df_data, report_title):
     font_path = "Amiri-Regular.ttf"
     if not os.path.exists(font_path):
@@ -215,7 +215,6 @@ def generate_pdf_report(df_data, report_title):
                  new_y="NEXT" if last else "TOP")
     
     for _, row in df_data.iterrows():
-        # دعم قراءة المفاتيح سواء كانت بالأسماء العربية أو الإنجليزية
         val_time = str(row.get("الوقت", row.get("audit_time", "")))
         val_status = str(row.get("الحالة", row.get("status", "")))
         val_shortage = str(row.get("النقص", row.get("shortage", 0.0)))
@@ -312,6 +311,7 @@ def main_app():
         st.markdown(f"🔒 **الصلاحية:** `{st.session_state.user_role}`")
         st.write("---")
     
+    # تحديد القوائم بناءً على الصلاحيات بدقة
     menu_options = [
         "📋 لوحة المتابعة والتدقيق اليومي", 
         "📁 المطابقات الشهرية والترحيل",
@@ -320,9 +320,14 @@ def main_app():
         "📊 المؤشرات والتقارير الإحصائية"
     ]
     
-    if st.session_state.user_role == "مشرف رئيسي":
+    # يوزر ADMIN حصرياً يرى إدارة المستخدمين والسجل الرقابي
+    if st.session_state.username == "ADMIN":
         menu_options.insert(3, "🔑 إدارة المستخدمين والصلاحيات")
         menu_options.append("🛡️ الحوكمة والسجل الرقابي")
+    elif st.session_state.user_role == "مشرف":
+        # المشرف يرى الحوكمة ولكن لا يرى إدارة المستخدمين (ولا يمتلك التنظيف الكامل)
+        menu_options.append("🛡️ الحوكمة والسجل الرقابي")
+    # المدقق: لا يرى صفحة إدارة المستخدمين نهائياً، ولا يرى الحوكمة الكاملة (حسب الرغبة)
 
     menu = st.sidebar.selectbox("قائمة التنقل الرئيسي", menu_options)
     
@@ -466,8 +471,8 @@ def main_app():
 
             st.success(f"⚡ يتم حفظ التعديلات تلقائياً لتاريخ ({date_str}) بشكل فوري ومستقل لكل فرع!")
 
-            # صلاحية المشرف الرئيسي ADMIN لتنظيف السجل اليومي بالكامل
-            if st.session_state.username == "ADMIN" and st.session_state.user_role == "مشرف رئيسي":
+            # 🛑 صلاحية التنظيف الكامل حصرياً ليوزر ADMIN فقط (المشرف والمتقن محرومان منها)
+            if st.session_state.username == "ADMIN":
                 with st.expander("🗑️ منطقة خطر: التنظيف الكامل لجدول التدقيق اليومي"):
                     st.error("⚠️ تحذير: هذا الإجراء سيقوم بحذف كافة السجلات اليومية في قاعدة البيانات نهائياً!")
                     confirm_clear_daily = st.checkbox("أؤكد رغبتي في مسح وتنظيف السجل اليومي بالكامل", key="chk_daily_clear")
@@ -670,8 +675,8 @@ def main_app():
                     st.success(f"✅ تم حذف سجل الصندوق ({r['box_no']}) في ({r['branch_name']}) لتاريخ ({del_date_str}).")
                     st.rerun()
 
-        # صلاحية المشرف الرئيسي ADMIN لتنظيف الأرشيف الشهري بالكامل
-        if st.session_state.username == "ADMIN" and st.session_state.user_role == "مشرف رئيسي":
+        # 🛑 صلاحية التنظيف الكامل حصرياً ليوزر ADMIN فقط
+        if st.session_state.username == "ADMIN":
             with st.expander("🗑️ منطقة خطر: التنظيف الكامل لأرشيف المطابقات الشهرية"):
                 st.error("⚠️ تحذير: هذا الإجراء سيقوم بحذف كافة السجلات والأرشيف الشهري بالكامل وبشكل نهائي!")
                 confirm_clear_archive = st.checkbox("أؤكد رغبتي في مسح وتنظيف الأرشيف الشهري بالكامل", key="chk_archive_clear")
@@ -744,8 +749,9 @@ def main_app():
         st.subheader("🔑 إدارة حسابات المدققين وصلاحيات الدخول")
         st.caption("إضافة حسابات جديدة، مراجعة كلمات المرور للموظفين، وتعديلها أو حذفها.")
         
-        if st.session_state.user_role != "مشرف رئيسي":
-            st.error("⚠️ عذراً، هذه الصفحة مخصصة للمشرف الرئيسي فقط.")
+        # حماية صارمة: صفحة إدارة المستخدمين متاحة فقط ليوزر ADMIN
+        if st.session_state.username != "ADMIN":
+            st.error("⚠️ عذراً، هذه الصفحة مخصصة للمشرف الرئيسي (ADMIN) فقط.")
         else:
             col_u1, col_u2 = st.columns([1, 1.3])
             with col_u1:
@@ -754,7 +760,7 @@ def main_app():
                     new_user = st.text_input("اسم المستخدم (بالإنجليزية، مثال: ahmad)")
                     new_pass = st.text_input("كلمة المرور", type="password")
                     new_name = st.text_input("اسم الموظف الكامل")
-                    new_role = st.selectbox("الصلاحية", ["مدقق", "مشرف رئيسي"])
+                    new_role = st.selectbox("الصلاحية", ["مدقق", "مشرف"])
                     
                     add_user_btn = st.form_submit_button("إضافة المستخدم", use_container_width=True)
                     
@@ -765,7 +771,7 @@ def main_app():
                                 c.execute("INSERT INTO users (username, password, role, full_name) VALUES (?, ?, ?, ?)",
                                           (new_user.strip(), new_pass.strip(), new_role, new_name.strip()))
                                 conn.commit()
-                                log_activity(conn, st.session_state.username, "إضافة مستخدم", f"تم إضافة المستخدم الجديد: {new_user}")
+                                log_activity(conn, st.session_state.username, "إضافة مستخدم", f"تم إضافة المستخدم الجديد: {new_user} برتبة {new_role}")
                                 st.success(f"تم إضافة المستخدم ({new_name}) بنجاح!")
                                 st.rerun()
                             except sqlite3.IntegrityError:
@@ -781,7 +787,7 @@ def main_app():
                     
                     selected_target_user = st.selectbox("اختر اسم المستخدم للتعديل/الحذف", user_list)
                     edit_pass = st.text_input("كلمة المرور الجديدة (اختياري)", type="password")
-                    edit_role = st.selectbox("تعديل الصلاحية", ["مدقق", "مشرف رئيسي"])
+                    edit_role = st.selectbox("تعديل الصلاحية", ["مدقق", "مشرف"])
                     
                     col_b1, col_b2 = st.columns(2)
                     with col_b1:
@@ -825,7 +831,11 @@ def main_app():
         show_reports_page(conn)
 
     elif menu == "🛡️ الحوكمة والسجل الرقابي":
-        show_governance_page(conn)
+        # حماية صفحة الحوكمة لتكون متاحة لـ ADMIN أو المشرف فقط
+        if st.session_state.username == "ADMIN" or st.session_state.user_role == "مشرف":
+            show_governance_page(conn)
+        else:
+            st.error("⚠️ عذراً، هذه الصفحة غير متاحة لصلاحيتك.")
 
     conn.close()
 
