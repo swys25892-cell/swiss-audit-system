@@ -8,6 +8,7 @@ import os
 import urllib.request
 import arabic_reshaper
 from bidi.algorithm import get_display
+from audit_governance_page import show_governance_page, log_activity
 
 # استدعاء دالة عرض التقارير والمؤشرات من الملف المنفصل
 from reports_page import show_reports_page
