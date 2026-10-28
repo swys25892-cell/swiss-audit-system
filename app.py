@@ -221,7 +221,7 @@ def generate_pdf_report(df_data, date_str):
     
     return bytes(pdf.output())
 
-# دالة لتلوين خلايا الجدول بناءً على الحالة (أخضر للمطابق، أحمر لغير المطابق)
+# دالة لتلوين خلايا الجدول بالحsأخضر والأحمر بناءً على الحالة
 def color_status(val):
     if val == "مطابق":
         return 'background-color: #d4edda; color: #155724; font-weight: bold;'
@@ -344,7 +344,7 @@ def main_app():
             else:
                 working_df["الزيادة"] = 0.0
                 working_df["النقص"] = 0.0
-                working_df["الحالة"] = ""
+                working_df["الحالة"] = None
                 working_df["الوقت"] = ""
                 working_df["الملاحظات"] = ""
 
@@ -366,8 +366,11 @@ def main_app():
             else:
                 filtered_df = working_df
             
+            # تطبيق التلوين المباشر للحالة في الجدول المنسدل
+            styled_filtered_df = filtered_df.style.applymap(color_status, subset=['الحالة'])
+
             edited_df = st.data_editor(
-                filtered_df,
+                styled_filtered_df,
                 column_config={
                     "branch_no": st.column_config.TextColumn("رقم الفرع", disabled=True),
                     "branch_name": st.column_config.TextColumn("اسم الفرع", disabled=True),
@@ -413,7 +416,7 @@ def main_app():
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (date_str, str(row["branch_no"]), str(row["branch_name"]), box, str(row["employee_name"]), float(row["الزيادة"]), float(row["النقص"]), status_val, str(row["الملاحظات"]), current_time_str))
                 else:
-                    # إذا كانت الحالة فارغة يتم حذف السجل من قاعدة البيانات ليظهر الحقل فارغاً تماماً
+                    # تفريغ وسحْب الحالة والوقت نهائياً في حال قام المدقق بإزالتها
                     if existing_rec:
                         c.execute("DELETE FROM daily_audit WHERE audit_date = ? AND box_no = ?", (date_str, box))
                         
@@ -489,7 +492,6 @@ def main_app():
         if df_monthly.empty:
             st.info(f"لا توجد سجلات مرحلة مطابقة لتاريخ ({target_date_str}) في الأرشيف الشهري.")
         else:
-            # عرض الأرشيف مع تلوين حالات المطابق وغير المطابق
             df_styled = df_monthly.rename(columns={
                 "audit_date": "التاريخ",
                 "branch_no": "رقم الفرع",
@@ -651,6 +653,6 @@ def main_app():
     conn.close()
 
 if not st.session_state.logged_in:
-    login_session = login_screen() # type: ignore
+    login_screen()
 else:
     main_app()
