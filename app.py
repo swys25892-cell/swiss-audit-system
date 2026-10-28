@@ -451,12 +451,15 @@ def main_app():
 
             st.success(f"⚡ يتم حفظ التعديلات تلقائياً لتاريخ ({date_str}) بشكل فوري ومستقل لكل فرع!")
 
-            if st.session_state.user_role == "مشرف رئيسي":
-                with st.expander("🧹 مسح تدقيق هذا اليوم (للمشرف)"):
-                    confirm = st.checkbox("أؤكد مسح كل حالات هذا التاريخ")
-                    if st.button("مسح الآن") and confirm:
-                        conn.execute("DELETE FROM daily_audit WHERE audit_date = ?", (date_str,))
+            # صلاحية المشرف الرئيسي ADMIN لتنظيف السجل اليومي بالكامل
+            if st.session_state.username == "ADMIN" and st.session_state.user_role == "مشرف رئيسي":
+                with st.expander("🗑️ منطقة خطر: التنظيف الكامل لجدول التدقيق اليومي"):
+                    st.error("⚠️ تحذير: هذا الإجراء سيقوم بحذف كافة السجلات اليومية في قاعدة البيانات نهائياً!")
+                    confirm_clear_daily = st.checkbox("أؤكد رغبتي في مسح وتنظيف السجل اليومي بالكامل", key="chk_daily_clear")
+                    if st.button("🧹 مسح وتنظيف السجل اليومي بالكامل نهائياً", use_container_width=True) and confirm_clear_daily:
+                        conn.execute("DELETE FROM daily_audit")
                         conn.commit()
+                        st.success("✅ تم تنظيف ومسح السجل اليومي بالكامل بنجاح!")
                         st.rerun()
 
             st.write("---")
@@ -523,7 +526,6 @@ def main_app():
                             notes_v = "ترحيل تلقائي - لم يتم الإدخال"
                             time_v = "تلقائي"
                             
-                        # التحقق هل السجل موجود مسبقاً في الأرشيف الشهري لتحديثه أو إضافته
                         c.execute("SELECT id FROM monthly_audit_archive WHERE audit_date = ? AND branch_no = ? AND box_no = ?", 
                                   (target_date_str, b_no, box_no))
                         existing_archive = c.fetchone()
@@ -648,6 +650,17 @@ def main_app():
                                      (del_date_str, r["branch_no"], r["box_no"]))
                     conn.commit()
                     st.success(f"✅ تم حذف سجل الصندوق ({r['box_no']}) في ({r['branch_name']}) لتاريخ ({del_date_str}).")
+                    st.rerun()
+
+        # صلاحية المشرف الرئيسي ADMIN لتنظيف الأرشيف الشهري بالكامل
+        if st.session_state.username == "ADMIN" and st.session_state.user_role == "مشرف رئيسي":
+            with st.expander("🗑️ منطقة خطر: التنظيف الكامل لأرشيف المطابقات الشهرية"):
+                st.error("⚠️ تحذير: هذا الإجراء سيقوم بحذف كافة السجلات والأرشيف الشهري بالكامل وبشكل نهائي!")
+                confirm_clear_archive = st.checkbox("أؤكد رغبتي في مسح وتنظيف الأرشيف الشهري بالكامل", key="chk_archive_clear")
+                if st.button("🧹 مسح وتنظيف الأرشيف الشهري بالكامل نهائياً", use_container_width=True) and confirm_clear_archive:
+                    conn.execute("DELETE FROM monthly_audit_archive")
+                    conn.commit()
+                    st.success("✅ تم تنظيف ومسح أرشيف المطابقات الشهرية بالكامل بنجاح!")
                     st.rerun()
 
     elif menu == "👥 قاعدة بيانات الموظفين والصناديق (Google Sheets)":
