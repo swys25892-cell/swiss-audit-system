@@ -18,7 +18,7 @@ def ar(text):
     except:
         return str(text)
 
-# دالة توليد تقرير PDF للمتكررين (3 مرات فأكثر)
+# دالة توليد تقرير PDF للمتكررين مع تفاصيل الأيام
 def generate_non_matching_pdf(df_data, report_title):
     font_path = "Amiri-Regular.ttf"
     if not os.path.exists(font_path):
@@ -41,31 +41,33 @@ def generate_non_matching_pdf(df_data, report_title):
 
     if os.path.exists(font_path):
         pdf.add_font("Amiri", fname=font_path)
-        pdf.set_font("Amiri", size=15)
+        pdf.set_font("Amiri", size=14)
     else:
-        pdf.set_font("Arial", size=15)
+        pdf.set_font("Arial", size=14)
     
     pdf.cell(190, 10, text=ar("شركة سويس للصرافة - قسم التدقيق الداخلي والرقابة"), new_x="LMARGIN", new_y="NEXT", align='C')
     
     if os.path.exists(font_path):
-        pdf.set_font("Amiri", size=12)
+        pdf.set_font("Amiri", size=11)
     else:
-        pdf.set_font("Arial", size=12)
+        pdf.set_font("Arial", size=11)
         
     pdf.cell(190, 8, text=ar(report_title), new_x="LMARGIN", new_y="NEXT", align='C')
     pdf.ln(6)
     
     if os.path.exists(font_path):
-        pdf.set_font("Amiri", size=9)
+        pdf.set_font("Amiri", size=8)
     else:
-        pdf.set_font("Arial", size=9)
+        pdf.set_font("Arial", size=8)
         
+    # أعمدة الجدول مع تخصيص العرض لتسع تفاصيل الأيام
     headers = [
-        ("عدد أرقام غ.م", 30), 
-        ("اسم الموظف", 50), 
-        ("رقم الصندوق", 25), 
-        ("اسم الفرع", 55), 
-        ("رقم الفرع", 30)
+        ("تفاصيل الأيام", 50),
+        ("عدد غ.م", 20), 
+        ("اسم الموظف", 40), 
+        ("رقم الصندوق", 20), 
+        ("اسم الفرع", 40), 
+        ("رقم الفرع", 20)
     ]
     
     for i, (h, w) in enumerate(headers):
@@ -76,11 +78,12 @@ def generate_non_matching_pdf(df_data, report_title):
     
     for _, row in df_data.iterrows():
         values = [
-            (str(row.get("non_match_count", 0)), 30),
-            (str(row.get("employee_name", "")), 50),
-            (str(row.get("box_no", "")), 25),
-            (str(row.get("branch_name", "")), 55),
-            (str(row.get("branch_no", "")), 30)
+            (str(row.get("non_match_dates", "")), 50),
+            (str(row.get("non_match_count", 0)), 20),
+            (str(row.get("employee_name", "")), 40),
+            (str(row.get("box_no", "")), 20),
+            (str(row.get("branch_name", "")), 40),
+            (str(row.get("branch_no", "")), 20)
         ]
         for i, (v, w) in enumerate(values):
             last = i == len(values) - 1
@@ -96,18 +99,20 @@ def show_reports_page(conn):
     st.caption("مركز التقارير التحليلية وتقييم المخاطر والأداء لشركة سويس للصرافة")
     st.write("---")
 
-    # 1. المربع الأول: تقرير المخالفات المتكررة (3 مرات فأكثر)
+    # 1. المربع الأول: تقرير المخالفات المتكررة (3 مرات فأكثر) مع تفاصيل الأيام
     with st.container():
         st.markdown('''
             <div style="background-color: #ffffff; padding: 15px; border-radius: 10px; border-right: 5px solid #c53030; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 20px;">
-                <h4 style="margin:0; color: #c53030;">🚨 1. تقرير الحالات غير المطابقة المتكررة (3 مرات فأكثر)</h4>
-                <p style="margin:5px 0 0 0; font-size: 13px; color: #666;">رصد الموظفين والصناديق التي حصلت على 3 شارات غير مطابق أو أكثر واستخراج تقرير PDF عاجل.</p>
+                <h4 style="margin:0; color: #c53030;">🚨 1. تقرير الحالات غير المطابقة المتكررة (3 مرات فأكثر مع تواريخ الأيام)</h4>
+                <p style="margin:5px 0 0 0; font-size: 13px; color: #666;">رصد الموظفين والصناديق التي حصلت على 3 شارات غير مطابق أو أكثر مع عرض تفاصيل تواريخ الأيام واستخراج تقرير PDF عاجل.</p>
             </div>
         ''', unsafe_allow_html=True)
         
-        # استعلام محسّن لحساب الأيام الفريدة غير المطابقة من جدول الأرشيف لمنع تضاعف العدد
+        # استعلام لجلب العدد وتاريخ كل يوم حصلت فيه المخالفة مدعوماً بـ GROUP_CONCAT
         query_repeat = '''
-            SELECT branch_no, branch_name, box_no, employee_name, COUNT(DISTINCT audit_date) as non_match_count
+            SELECT branch_no, branch_name, box_no, employee_name, 
+                   COUNT(DISTINCT audit_date) as non_match_count,
+                   GROUP_CONCAT(audit_date, '، ') as non_match_dates
             FROM monthly_audit_archive
             WHERE status = 'غير مطابق'
             GROUP BY branch_no, box_no, employee_name
@@ -116,7 +121,7 @@ def show_reports_page(conn):
         '''
         df_repeat = pd.read_sql_query(query_repeat, conn)
         
-        col1, col2 = st.columns([2, 1])
+        col1, col2 = st.columns([3, 1])
         with col1:
             if df_repeat.empty:
                 st.info("🎉 لا يوجد حالياً أي موظف تجاوز 3 مخالفات غير مطابقة في الأرشيف الشهري.")
@@ -126,16 +131,17 @@ def show_reports_page(conn):
                     "branch_name": "اسم الفرع",
                     "box_no": "رقم الصندوق",
                     "employee_name": "اسم الموظف",
-                    "non_match_count": "تكرار غير مطابق"
+                    "non_match_count": "تكرار غير مطابق",
+                    "non_match_dates": "تفاصيل الأيام (التواريخ)"
                 }), use_container_width=True, hide_index=True)
         
         with col2:
             if not df_repeat.empty:
-                pdf_data = generate_non_matching_pdf(df_repeat, "تقرير الموظفين الأكثر تكراراً لحالات عدم المطابقة (3 فأكثر)")
+                pdf_data = generate_non_matching_pdf(df_repeat, "تقرير الموظفين الأكثر تكراراً لعدم المطابقة مع تفاصيل الأيام")
                 st.download_button(
-                    label="📄 تحميل تقرير PDF للمتكررين",
+                    label="📄 تحميل تقرير PDF مع تفاصيل الأيام",
                     data=pdf_data,
-                    file_name="repeated_non_matching_report.pdf",
+                    file_name="repeated_non_matching_with_dates.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
