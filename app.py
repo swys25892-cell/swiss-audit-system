@@ -215,15 +215,25 @@ def generate_pdf_report(df_data, report_title):
                  new_y="NEXT" if last else "TOP")
     
     for _, row in df_data.iterrows():
+        # دعم قراءة المفاتيح سواء كانت بالأسماء العربية أو الإنجليزية
+        val_time = str(row.get("الوقت", row.get("audit_time", "")))
+        val_status = str(row.get("الحالة", row.get("status", "")))
+        val_shortage = str(row.get("النقص", row.get("shortage", 0.0)))
+        val_excess = str(row.get("الزيادة", row.get("excess", 0.0)))
+        val_emp = str(row.get("اسم الموظف", row.get("employee_name", "")))
+        val_box = str(row.get("رقم الصندوق", row.get("box_no", "")))
+        val_branch_name = str(row.get("اسم الفرع", row.get("branch_name", "")))
+        val_branch_no = str(row.get("رقم الفرع", row.get("branch_no", "")))
+
         values = [
-            (str(row.get("audit_time", "")), 24),
-            (str(row.get("status", "")), 20),
-            (str(row.get("shortage", 0.0)), 16), 
-            (str(row.get("excess", 0.0)), 16), 
-            (str(row.get("employee_name", "")), 40),
-            (str(row.get("box_no", "")), 20), 
-            (str(row.get("branch_name", "")), 38), 
-            (str(row.get("branch_no", "")), 16)
+            (val_time, 24),
+            (val_status, 20),
+            (val_shortage, 16), 
+            (val_excess, 16), 
+            (val_emp, 40),
+            (val_box, 20), 
+            (val_branch_name, 38), 
+            (val_branch_no, 16)
         ]
         for i, (v, w) in enumerate(values):
             last = i == len(values) - 1
