@@ -221,6 +221,14 @@ def generate_pdf_report(df_data, date_str):
     
     return bytes(pdf.output())
 
+# دالة لتلوين خلايا الجدول بناءً على الحالة (أخضر للمطابق، أحمر لغير المطابق)
+def color_status(val):
+    if val == "مطابق":
+        return 'background-color: #d4edda; color: #155724; font-weight: bold;'
+    elif val == "غير مطابق":
+        return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+    return ''
+
 # حالة تسجيل الدخول
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -376,8 +384,10 @@ def main_app():
                 key=f"audit_editor_{date_str}"
             )
 
+            # وقت الجهاز الفعلي والدقيق
             current_time_str = datetime.now().strftime("%I:%M:%S %p")
             c = conn.cursor()
+            
             for index, row in edited_df.iterrows():
                 box = str(row["box_no"])
                 status_val = str(row["الحالة"]).strip()
@@ -403,7 +413,7 @@ def main_app():
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (date_str, str(row["branch_no"]), str(row["branch_name"]), box, str(row["employee_name"]), float(row["الزيادة"]), float(row["النقص"]), status_val, str(row["الملاحظات"]), current_time_str))
                 else:
-                    # إذا تم إفراغ الحالة، نقوم بحذف السجل ليبقى الصندوق فارغاً
+                    # إذا كانت الحالة فارغة يتم حذف السجل من قاعدة البيانات ليظهر الحقل فارغاً تماماً
                     if existing_rec:
                         c.execute("DELETE FROM daily_audit WHERE audit_date = ? AND box_no = ?", (date_str, box))
                         
@@ -479,7 +489,8 @@ def main_app():
         if df_monthly.empty:
             st.info(f"لا توجد سجلات مرحلة مطابقة لتاريخ ({target_date_str}) في الأرشيف الشهري.")
         else:
-            st.dataframe(df_monthly.rename(columns={
+            # عرض الأرشيف مع تلوين حالات المطابق وغير المطابق
+            df_styled = df_monthly.rename(columns={
                 "audit_date": "التاريخ",
                 "branch_no": "رقم الفرع",
                 "branch_name": "اسم الفرع",
@@ -490,7 +501,8 @@ def main_app():
                 "status": "الحالة",
                 "audit_time": "الوقت",
                 "notes": "الملاحظات"
-            }), use_container_width=True)
+            }).style.applymap(color_status, subset=['الحالة'])
+            st.dataframe(df_styled, use_container_width=True)
 
     elif menu == "👥 قاعدة بيانات الموظفين والصناديق (Google Sheets)":
         st.subheader("👥 إدارة قاعدة بيانات الموظفين والصناديق والفروع")
@@ -639,6 +651,6 @@ def main_app():
     conn.close()
 
 if not st.session_state.logged_in:
-    login_screen()
+    login_session = login_screen() # type: ignore
 else:
     main_app()
