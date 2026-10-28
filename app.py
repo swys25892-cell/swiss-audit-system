@@ -497,7 +497,7 @@ def main_app():
         
         col_btn1, col_btn2 = st.columns([1, 2])
         with col_btn1:
-            if st.button("📥 تنفيذ ترحيل حركات اليوم المحدد", use_container_width=True):
+            if st.button("📥 تنفيذ ترحيل وتحديث حركات اليوم المحدد", use_container_width=True):
                 c = conn.cursor()
                 c.execute("SELECT branch_no, branch_name, box_no, employee_name FROM employees")
                 all_employees = c.fetchall()
@@ -506,6 +506,7 @@ def main_app():
                     st.warning("⚠️ لا توجد بيانات موظفين مسجلة في النظام.")
                 else:
                     migrated_count = 0
+                    updated_count = 0
                     for emp in all_employees:
                         b_no, b_name, box_no, emp_name = emp
                         
@@ -522,11 +523,19 @@ def main_app():
                             notes_v = "ترحيل تلقائي - لم يتم الإدخال"
                             time_v = "تلقائي"
                             
+                        # التحقق هل السجل موجود مسبقاً في الأرشيف الشهري لتحديثه أو إضافته
                         c.execute("SELECT id FROM monthly_audit_archive WHERE audit_date = ? AND branch_no = ? AND box_no = ?", 
                                   (target_date_str, b_no, box_no))
-                        exists_in_archive = c.fetchone()
+                        existing_archive = c.fetchone()
                         
-                        if not exists_in_archive:
+                        if existing_archive:
+                            c.execute('''
+                                UPDATE monthly_audit_archive 
+                                SET branch_name = ?, employee_name = ?, excess = ?, shortage = ?, status = ?, notes = ?, audit_time = ?
+                                WHERE audit_date = ? AND branch_no = ? AND box_no = ?
+                            ''', (b_name, emp_name, excess_v, shortage_v, status_v, notes_v, time_v, target_date_str, b_no, box_no))
+                            updated_count += 1
+                        else:
                             c.execute('''
                                 INSERT INTO monthly_audit_archive (audit_date, branch_no, branch_name, box_no, employee_name, excess, shortage, status, notes, audit_time)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -534,7 +543,7 @@ def main_app():
                             migrated_count += 1
                             
                     conn.commit()
-                    st.success(f"✅ تم ترحيل ({migrated_count}) سجلاً لتاريخ ({target_date_str}) بنجاح تام! (تم اعتماد الصناديق الفارغة كـ 'مجاز' تلقائياً)")
+                    st.success(f"✅ تمت عملية المزامنة والترحيل بنجاح! (تم إدراج {migrated_count} سجل جديد، وتحديث {updated_count} سجل معدل لتاريخ {target_date_str})")
                     st.rerun()
         
         st.write("---")
