@@ -109,7 +109,7 @@ def ar(text):
     except:
         return str(text)
 
-# دالة توليد تقرير PDF مع إدراج شعار الشركة بالاسم الصحيح
+# دالة توليد تقرير PDF مع إدراج شعار الشركة
 def generate_pdf_report(df_data, date_str):
     font_path = "Amiri-Regular.ttf"
     if not os.path.exists(font_path):
@@ -122,7 +122,7 @@ def generate_pdf_report(df_data, date_str):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
     
-    # إدراج الشعار في أعلى تقرير الـ PDF بالاسم المطابق لملفك المرفوع
+    # إدراج الشعار في أعلى تقرير الـ PDF
     logo_file = "LOGO-removebg-preview.png"
     if os.path.exists(logo_file):
         try:
@@ -192,16 +192,20 @@ if "user_role" not in st.session_state:
     st.session_state.user_role = ""
 
 def login_screen():
-    st.markdown('''
-        <div style="background: linear-gradient(135deg, #ffffff 0%, #f9f9f9 100%); padding: 35px; border-radius: 16px; border: 2px solid #d9ea37; text-align: center; max-width: 480px; margin: 40px auto; box-shadow: 0 6px 20px rgba(0,0,0,0.08);">
-            <div style="font-size: 40px; margin-bottom: 10px;">💼</div>
-            <h2 style="color: #111111; font-family: Tahoma; margin-bottom: 5px;">شركة سويس للصرافة</h2>
-            <p style="color: #666666; font-size: 14px; font-weight: bold; margin-top: 0;">قسم التدقيق الداخلي والرقابة</p>
-        </div>
-    ''', unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([1, 1.2, 1])
-    with col2:
+    # توسيع عرض صفحة تسجيل الدخول وإضافة الشعار في الأعلى
+    col_l1, col_l2, col_l3 = st.columns([1, 1.2, 1])
+    with col_l2:
+        logo_file = "LOGO-removebg-preview.png"
+        if os.path.exists(logo_file):
+            st.image(logo_file, use_column_width=True)
+            
+        st.markdown('''
+            <div style="background: linear-gradient(135deg, #ffffff 0%, #f9f9f9 100%); padding: 25px; border-radius: 16px; border: 2px solid #d9ea37; text-align: center; margin-bottom: 20px; box-shadow: 0 6px 20px rgba(0,0,0,0.08);">
+                <h2 style="color: #111111; font-family: Tahoma; margin-bottom: 5px;">شركة سويس للصرافة</h2>
+                <p style="color: #666666; font-size: 14px; font-weight: bold; margin-top: 0;">قسم التدقيق الداخلي والرقابة</p>
+            </div>
+        ''', unsafe_allow_html=True)
+        
         with st.form("login_form"):
             username_input = st.text_input("اسم المستخدم")
             password_input = st.text_input("كلمة المرور", type="password")
@@ -225,7 +229,6 @@ def login_screen():
 
 def main_app():
     with st.sidebar:
-        # عرض الشعار في القائمة الجانبية بالاسم الدقيق
         logo_file = "LOGO-removebg-preview.png"
         if os.path.exists(logo_file):
             st.image(logo_file, use_column_width=True)
