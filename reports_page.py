@@ -105,14 +105,11 @@ def show_reports_page(conn):
             </div>
         ''', unsafe_allow_html=True)
         
-        # استعلام لحساب عدد شارات "غير مطابق" لكل موظف في الأرشيف واليوميات
+        # استعلام محسّن لحساب الأيام الفريدة غير المطابقة من جدول الأرشيف لمنع تضاعف العدد
         query_repeat = '''
-            SELECT branch_no, branch_name, box_no, employee_name, COUNT(*) as non_match_count
-            FROM (
-                SELECT branch_no, branch_name, box_no, employee_name, status FROM monthly_audit_archive WHERE status = 'غير مطابق'
-                UNION ALL
-                SELECT branch_no, branch_name, box_no, employee_name, status FROM daily_audit WHERE status = 'غير مطابق'
-            )
+            SELECT branch_no, branch_name, box_no, employee_name, COUNT(DISTINCT audit_date) as non_match_count
+            FROM monthly_audit_archive
+            WHERE status = 'غير مطابق'
             GROUP BY branch_no, box_no, employee_name
             HAVING non_match_count >= 3
             ORDER BY non_match_count DESC
@@ -122,7 +119,7 @@ def show_reports_page(conn):
         col1, col2 = st.columns([2, 1])
         with col1:
             if df_repeat.empty:
-                st.info("🎉 لا يوجد حالياً أي موظف تجاوز 3 مخالفات غير مطابقة.")
+                st.info("🎉 لا يوجد حالياً أي موظف تجاوز 3 مخالفات غير مطابقة في الأرشيف الشهري.")
             else:
                 st.dataframe(df_repeat.rename(columns={
                     "branch_no": "رقم الفرع",
