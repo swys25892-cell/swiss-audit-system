@@ -96,12 +96,10 @@ init_db()
 def get_db_connection():
     return sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
 
-# دالة مزامنة دقيقة تعتمد على ترتيب أعمدة ملف الـ Google Sheets الخاص بك
+# دالة مزامنة بيانات الموظفين من Google Sheets
 def sync_employees_from_sheets():
     try:
         df_sheet = pd.read_csv(GOOGLE_SHEETS_CSV_URL)
-        
-        # التأكد من جلب الأعمده حسب ترتيبها في الشيت (العمود 0: رقم الفرع، العمود 1: اسم الفرع، العمود 2: رقم الصندوق، العمود 3: اسم الموظف)
         if df_sheet.shape[1] >= 4:
             df_clean = pd.DataFrame()
             df_clean['branch_no'] = df_sheet.iloc[:, 0]
@@ -143,7 +141,7 @@ def ar(text):
     except:
         return str(text)
 
-# دالة توليد تقرير PDF مع إدراج شعار الشركة وعامود النقص
+# دالة توليد تقرير PDF
 def generate_pdf_report(df_data, date_str):
     font_path = "Amiri-Regular.ttf"
     if not os.path.exists(font_path):
@@ -338,13 +336,13 @@ def main_app():
             else:
                 working_df["الزيادة"] = 0.0
                 working_df["النقص"] = 0.0
-                working_df["الحالة"] = "مطابق"
+                working_df["الحالة"] = ""
                 working_df["الوقت"] = ""
                 working_df["الملاحظات"] = ""
 
             working_df["الزيادة"] = working_df["الزيادة"].fillna(0.0)
             working_df["النقص"] = working_df["النقص"].fillna(0.0)
-            working_df["الحالة"] = working_df["الحالة"].fillna("مطابق")
+            working_df["الحالة"] = working_df["الحالة"].fillna("")
             working_df["الوقت"] = working_df["الوقت"].fillna("")
             working_df["الملاحظات"] = working_df["الملاحظات"].fillna("")
 
@@ -369,7 +367,7 @@ def main_app():
                     "employee_name": st.column_config.TextColumn("اسم الموظف", disabled=True),
                     "الزيادة": "الزيادة",
                     "النقص": "النقص",
-                    "الحالة": st.column_config.SelectboxColumn("الحالة", options=["مطابق", "غير مطابق"], required=True),
+                    "الحالة": st.column_config.SelectboxColumn("الحالة", options=["", "مطابق", "غير مطابق"], required=False),
                     "الوقت": st.column_config.TextColumn("الوقت", disabled=True),
                     "الملاحظات": "الملاحظات"
                 },
@@ -382,24 +380,33 @@ def main_app():
             c = conn.cursor()
             for index, row in edited_df.iterrows():
                 box = str(row["box_no"])
+                status_val = str(row["الحالة"]).strip()
+                
                 c.execute("SELECT id, audit_time, status FROM daily_audit WHERE audit_date = ? AND box_no = ?", (date_str, box))
                 existing_rec = c.fetchone()
                 
-                if existing_rec:
-                    old_time = existing_rec[1]
-                    old_status = existing_rec[2]
-                    new_time = current_time_str if (old_status != str(row["الحالة"]) or not old_time) else old_time
-                    
-                    c.execute('''
-                        UPDATE daily_audit 
-                        SET excess = ?, shortage = ?, status = ?, notes = ?, audit_time = ?
-                        WHERE audit_date = ? AND box_no = ?
-                    ''', (float(row["الزيادة"]), float(row["النقص"]), str(row["الحالة"]), str(row["الملاحظات"]), new_time, date_str, box))
+                if status_val in ["مطابق", "غير مطابق"]:
+                    if existing_rec:
+                        old_time = existing_rec[1]
+                        old_status = existing_rec[2]
+                        # تحديث الوقت فقط إذا تغيرت الحالة أو لم يكن هناك وقت مسجل مسبقاً
+                        new_time = current_time_str if (old_status != status_val or not old_time) else old_time
+                        
+                        c.execute('''
+                            UPDATE daily_audit 
+                            SET excess = ?, shortage = ?, status = ?, notes = ?, audit_time = ?
+                            WHERE audit_date = ? AND box_no = ?
+                        ''', (float(row["الزيادة"]), float(row["النقص"]), status_val, str(row["الملاحظات"]), new_time, date_str, box))
+                    else:
+                        c.execute('''
+                            INSERT INTO daily_audit (audit_date, branch_no, branch_name, box_no, employee_name, excess, shortage, status, notes, audit_time)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (date_str, str(row["branch_no"]), str(row["branch_name"]), box, str(row["employee_name"]), float(row["الزيادة"]), float(row["النقص"]), status_val, str(row["الملاحظات"]), current_time_str))
                 else:
-                    c.execute('''
-                        INSERT INTO daily_audit (audit_date, branch_no, branch_name, box_no, employee_name, excess, shortage, status, notes, audit_time)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (date_str, str(row["branch_no"]), str(row["branch_name"]), box, str(row["employee_name"]), float(row["الزيادة"]), float(row["النقص"]), str(row["الحالة"]), str(row["الملاحظات"]), current_time_str))
+                    # إذا تم إفراغ الحالة، نقوم بحذف السجل ليبقى الصندوق فارغاً
+                    if existing_rec:
+                        c.execute("DELETE FROM daily_audit WHERE audit_date = ? AND box_no = ?", (date_str, box))
+                        
             conn.commit()
             st.success(f"⚡ يتم حفظ التعديلات تلقائياً لتاريخ ({date_str}) بشكل فوري!")
 
