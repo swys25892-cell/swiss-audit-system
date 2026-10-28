@@ -20,7 +20,6 @@ def init_db():
     conn = sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
     c = conn.cursor()
     
-    # جدول الحركات اليومية
     c.execute('''
         CREATE TABLE IF NOT EXISTS daily_audit (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,7 +36,6 @@ def init_db():
         )
     ''')
     
-    # جدول المطابقات والترحيل الشهري
     c.execute('''
         CREATE TABLE IF NOT EXISTS monthly_audit_archive (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,7 +52,6 @@ def init_db():
         )
     ''')
     
-    # جدول الموظفين والصناديق الأساسي
     c.execute('''
         CREATE TABLE IF NOT EXISTS employees (
             box_no TEXT PRIMARY KEY,
@@ -64,7 +61,6 @@ def init_db():
         )
     ''')
     
-    # جدول المستخدمين والصلاحيات
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
@@ -74,7 +70,6 @@ def init_db():
         )
     ''')
     
-    # إنشاء حساب المشرف الافتراضي إن لم يكن موجوداً
     c.execute("SELECT COUNT(*) FROM users")
     if c.fetchone()[0] == 0:
         c.execute("INSERT INTO users (username, password, role, full_name) VALUES (?, ?, ?, ?)", 
@@ -98,7 +93,6 @@ init_db()
 def get_db_connection():
     return sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
 
-# تجهيز النص العربي للعرض الصحيح في PDF
 def ar(text):
     if not text:
         return ""
@@ -109,7 +103,7 @@ def ar(text):
     except:
         return str(text)
 
-# دالة توليد تقرير PDF مع إدراج شعار الشركة
+# دالة توليد تقرير PDF مع إضافة عامود النقص
 def generate_pdf_report(df_data, date_str):
     font_path = "Amiri-Regular.ttf"
     if not os.path.exists(font_path):
@@ -122,7 +116,6 @@ def generate_pdf_report(df_data, date_str):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
     
-    # إدراج الشعار في أعلى تقرير الـ PDF
     logo_file = "LOGO-removebg-preview.png"
     if os.path.exists(logo_file):
         try:
@@ -137,7 +130,6 @@ def generate_pdf_report(df_data, date_str):
     else:
         pdf.set_font("Arial", size=16)
     
-    # ترويسة التقرير
     pdf.cell(190, 10, text=ar("شركة سويس للصرافة - تقرير التدقيق الداخلي"), new_x="LMARGIN", new_y="NEXT", align='C')
     
     if os.path.exists(font_path):
@@ -148,13 +140,21 @@ def generate_pdf_report(df_data, date_str):
     pdf.cell(190, 8, text=ar(f"تقرير الحالات غير المطابقة - التاريخ: {date_str}"), new_x="LMARGIN", new_y="NEXT", align='C')
     pdf.ln(8)
     
-    # رأس الجدول (من اليمين لليسار)
+    # رؤوس الأعمدة مع إضافة "النقص" وتوزيع العروض بدقة لتناسب صفحة A4
     if os.path.exists(font_path):
-        pdf.set_font("Amiri", size=10)
+        pdf.set_font("Amiri", size=9)
     else:
-        pdf.set_font("Arial", size=10)
+        pdf.set_font("Arial", size=9)
         
-    headers = [("الوقت", 30), ("الزيادة", 20), ("اسم الموظف", 45), ("رقم الصندوق", 25), ("اسم الفرع", 50), ("رقم الفرع", 20)]
+    headers = [
+        ("الوقت", 28), 
+        ("النقص", 18), 
+        ("الزيادة", 18), 
+        ("اسم الموظف", 42), 
+        ("رقم الصندوق", 22), 
+        ("اسم الفرع", 50), 
+        ("رقم الفرع", 17)
+    ]
     for i, (h, w) in enumerate(headers):
         last = i == len(headers) - 1
         pdf.cell(w, 8, ar(h), border=1, align='C',
@@ -168,12 +168,13 @@ def generate_pdf_report(df_data, date_str):
         
     for _, row in df_data.iterrows():
         values = [
-            (str(row["الوقت"]), 30), 
-            (str(row["الزيادة"]), 20), 
-            (str(row["employee_name"]), 45),
-            (str(row["box_no"]), 25), 
+            (str(row["الوقت"]), 28), 
+            (str(row.get("النقص", 0.0)), 18), 
+            (str(row["الزيادة"]), 18), 
+            (str(row["employee_name"]), 42),
+            (str(row["box_no"]), 22), 
             (str(row["branch_name"]), 50), 
-            (str(row["branch_no"]), 20)
+            (str(row["branch_no"]), 17)
         ]
         for i, (v, w) in enumerate(values):
             last = i == len(values) - 1
@@ -183,7 +184,7 @@ def generate_pdf_report(df_data, date_str):
     
     return bytes(pdf.output())
 
-# حالة تسجيل الدخول
+# حالة تسجيل الدخول وباقي التطبيق
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "username" not in st.session_state:
@@ -192,7 +193,6 @@ if "user_role" not in st.session_state:
     st.session_state.user_role = ""
 
 def login_screen():
-    # توسيع عرض صفحة تسجيل الدخول وإضافة الشعار في الأعلى
     col_l1, col_l2, col_l3 = st.columns([1, 1.2, 1])
     with col_l2:
         logo_file = "LOGO-removebg-preview.png"
