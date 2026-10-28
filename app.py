@@ -8,10 +8,10 @@ import os
 import urllib.request
 import arabic_reshaper
 from bidi.algorithm import get_display
-from audit_governance_page import show_governance_page, log_activity
 
-# استدعاء دالة عرض التقارير والمؤشرات من الملف المنفصل
+# استدعاء صفحة التقارير وصفحة الحوكمة والتدقيق الجديدة
 from reports_page import show_reports_page
+from audit_governance_page import show_governance_page, log_activity
 
 # تحديد المنطقة الزمنية لمدينة عمّان (الأردن)
 TZ = ZoneInfo("Asia/Amman")
@@ -312,6 +312,7 @@ def main_app():
     
     if st.session_state.user_role == "مشرف رئيسي":
         menu_options.insert(3, "🔑 إدارة المستخدمين والصلاحيات")
+        menu_options.append("🛡️ الحوكمة والسجل الرقابي")
 
     menu = st.sidebar.selectbox("قائمة التنقل الرئيسي", menu_options)
     
@@ -436,15 +437,18 @@ def main_app():
                                          WHERE audit_date=? AND branch_no=? AND box_no=?''',
                                       (excess_v, shortage_v, status_val, notes_v, new_time, date_str, b_no, box))
                             changed = True
+                            log_activity(conn, st.session_state.username, "تعديل تدقيق يومي", f"تاريخ: {date_str}, فرع: {b_no}, صندوق: {box}, حالة: {status_val}")
                     else:
                         c.execute('''INSERT INTO daily_audit (audit_date, branch_no, branch_name, box_no, employee_name, excess, shortage, status, notes, audit_time)
                                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                                   (date_str, b_no, str(row["branch_name"]), box, str(row["employee_name"]),
                                    excess_v, shortage_v, status_val, notes_v, current_time_str))
                         changed = True
+                        log_activity(conn, st.session_state.username, "إضافة تدقيق يومي جديد", f"تاريخ: {date_str}, فرع: {b_no}, صندوق: {box}, حالة: {status_val}")
                 elif rec:
                     c.execute("DELETE FROM daily_audit WHERE audit_date = ? AND branch_no = ? AND box_no = ?", (date_str, b_no, box))
                     changed = True
+                    log_activity(conn, st.session_state.username, "حذف تدقيق يومي", f"تاريخ: {date_str}, فرع: {b_no}, صندوق: {box}")
 
             conn.commit()
             if changed:
@@ -460,6 +464,7 @@ def main_app():
                     if st.button("🧹 مسح وتنظيف السجل اليومي بالكامل نهائياً", use_container_width=True) and confirm_clear_daily:
                         conn.execute("DELETE FROM daily_audit")
                         conn.commit()
+                        log_activity(conn, st.session_state.username, "تنظيف كامل", "تم مسح وتنظيف السجل اليومي بالكامل")
                         st.success("✅ تم تنظيف ومسح السجل اليومي بالكامل بنجاح!")
                         st.rerun()
 
@@ -546,6 +551,7 @@ def main_app():
                             migrated_count += 1
                             
                     conn.commit()
+                    log_activity(conn, st.session_state.username, "ترحيل أرشيف", f"تاريخ الترحيل: {target_date_str} (إدراج: {migrated_count}, تحديث: {updated_count})")
                     st.success(f"✅ تمت عملية المزامنة والترحيل بنجاح! (تم إدراج {migrated_count} سجل جديد، وتحديث {updated_count} سجل معدل لتاريخ {target_date_str})")
                     st.rerun()
         
@@ -650,6 +656,7 @@ def main_app():
                         conn.execute(f"DELETE FROM {tbl} WHERE audit_date = ? AND branch_no = ? AND box_no = ?",
                                      (del_date_str, r["branch_no"], r["box_no"]))
                     conn.commit()
+                    log_activity(conn, st.session_state.username, "حذف سجل محدد", f"تاريخ: {del_date_str}, فرع: {r['branch_name']}, صندوق: {r['box_no']}")
                     st.success(f"✅ تم حذف سجل الصندوق ({r['box_no']}) في ({r['branch_name']}) لتاريخ ({del_date_str}).")
                     st.rerun()
 
@@ -661,6 +668,7 @@ def main_app():
                 if st.button("🧹 مسح وتنظيف الأرشيف الشهري بالكامل نهائياً", use_container_width=True) and confirm_clear_archive:
                     conn.execute("DELETE FROM monthly_audit_archive")
                     conn.commit()
+                    log_activity(conn, st.session_state.username, "تنظيف كامل أرشيف", "تم مسح وتنظيف أرشيف المطابقات الشهرية بالكامل")
                     st.success("✅ تم تنظيف ومسح أرشيف المطابقات الشهرية بالكامل بنجاح!")
                     st.rerun()
 
@@ -672,6 +680,7 @@ def main_app():
             with st.spinner("جاري الاتصال بـ Google Sheets وتحديث البيانات..."):
                 success, info = sync_employees_from_sheets()
                 if success:
+                    log_activity(conn, st.session_state.username, "مزامنة Google Sheets", f"تم تحديث ({info}) سجل")
                     st.success(f"✅ تم المزامنة بنجاح! تم تحديث ({info}) سجل موظف وصندوق.")
                     st.rerun()
                 else:
@@ -718,6 +727,7 @@ def main_app():
                         else:
                             c.execute("UPDATE users SET password = ? WHERE username = ?", (new_pass_input.strip(), st.session_state.username))
                             conn.commit()
+                            log_activity(conn, st.session_state.username, "تغيير كلمة المرور", "تم تغيير كلمة المرور الشخصية بنجاح")
                             st.success("✅ تم تغيير كلمة المرور بنجاح! يرجى استخدامها عند تسجيل الدخول القادم.")
 
     elif menu == "🔑 إدارة المستخدمين والصلاحيات":
@@ -745,6 +755,7 @@ def main_app():
                                 c.execute("INSERT INTO users (username, password, role, full_name) VALUES (?, ?, ?, ?)",
                                           (new_user.strip(), new_pass.strip(), new_role, new_name.strip()))
                                 conn.commit()
+                                log_activity(conn, st.session_state.username, "إضافة مستخدم", f"تم إضافة المستخدم الجديد: {new_user}")
                                 st.success(f"تم إضافة المستخدم ({new_name}) بنجاح!")
                                 st.rerun()
                             except sqlite3.IntegrityError:
@@ -775,6 +786,7 @@ def main_app():
                         else:
                             c.execute("UPDATE users SET role = ? WHERE username = ?", (edit_role, selected_target_user))
                         conn.commit()
+                        log_activity(conn, st.session_state.username, "تعديل مستخدم", f"تم تعديل بيانات المستخدم: {selected_target_user}")
                         st.success(f"تم تحديث بيانات المستخدم ({selected_target_user}) بنجاح!")
                         st.rerun()
                         
@@ -785,6 +797,7 @@ def main_app():
                             c = conn.cursor()
                             c.execute("DELETE FROM users WHERE username = ?", (selected_target_user,))
                             conn.commit()
+                            log_activity(conn, st.session_state.username, "حذف مستخدم", f"تم حذف المستخدم: {selected_target_user}")
                             st.success(f"تم حذف المستخدم ({selected_target_user}) بنجاح!")
                             st.rerun()
                             
@@ -799,8 +812,10 @@ def main_app():
                 }), use_container_width=True)
 
     elif menu == "📊 المؤشرات والتقارير الإحصائية":
-        # استدعاء دالة التقارير من ملف reports_page.py المنفصل
         show_reports_page(conn)
+
+    elif menu == "🛡️ الحوكمة والسجل الرقابي":
+        show_governance_page(conn)
 
     conn.close()
 
