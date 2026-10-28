@@ -8,8 +8,8 @@ import urllib.request
 import arabic_reshaper
 from bidi.algorithm import get_display
 
-# رابط CSV الخاص بجدول الموظفين على Google Sheets
-GOOGLE_SHEETS_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSmavjxMii0NOgfAytcirzipjVzUa6eQJBUui7UgPo4dyeHEl2cFfP-_CcmyQ49Dmr2FDEo_e2Ek8ZY/pub?output=csv"
+# رابط CSV المباشر الجديد لصفحة الموظفين وصناديق الفروع
+GOOGLE_SHEETS_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSmavjxMii0NOgfAytcirzipjVzUa6eQJBUui7UgPo4dyeHEl2cFfP-_CcmyQ49Dmr2FDEo_e2Ek8ZY/pub?gid=0&single=true&output=csv"
 
 # إعدادات الصفحة
 st.set_page_config(
@@ -96,38 +96,42 @@ init_db()
 def get_db_connection():
     return sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
 
-# دالة مزامنة بيانات الموظفين من Google Sheets
+# دالة ذكية لمزامنة بيانات الموظفين من Google Sheets وقراءة كافة تسميات الأعمدة المحتملة
 def sync_employees_from_sheets():
     try:
+        # قراءة البيانات من الرابط المباشر الجديد
         df_sheet = pd.read_csv(GOOGLE_SHEETS_CSV_URL)
         df_sheet.columns = [str(col).strip() for col in df_sheet.columns]
         
-        # خريطة توحيد أسماء الأعمدة القادمة من جوجل شيت
         rename_map = {}
         for col in df_sheet.columns:
-            col_lower = col.lower()
-            if 'صندوق' in col or 'box' in col_lower:
+            col_clean = str(col).strip().lower()
+            if 'صندوق' in col_clean or 'box' in col_clean:
                 rename_map[col] = 'box_no'
-            elif 'موظف' in col or 'employee' in col_lower or 'اسم' in col:
+            elif 'موظف' in col_clean or 'employee' in col_clean or ('اسم' in col_clean and 'فرع' not in col_clean):
                 rename_map[col] = 'employee_name'
-            elif 'فرع' in col and ('اسم' in col or 'name' in col_lower):
+            elif 'فرع' in col_clean and ('اسم' in col_clean or 'name' in col_clean or 'current' in col_clean):
                 rename_map[col] = 'branch_name'
-            elif 'فرع' in col and ('رقم' in col or 'no' in col_lower or 'num' in col_lower):
+            elif 'فرع' in col_clean and ('رقم' in col_clean or 'no' in col_clean or 'num' in col_clean or 'code' in col_clean):
                 rename_map[col] = 'branch_no'
                 
         df_sheet.rename(columns=rename_map, inplace=True)
         
-        # التأكد من وجود كافة الأعمدة المطلوبة
-        required_cols = ['box_no', 'employee_name', 'branch_name', 'branch_no']
-        for c_req in required_cols:
-            if c_req not in df_sheet.columns:
-                df_sheet[c_req] = ""
+        # التأكد من توفر جميع الحقول المطلوبة
+        for req in ['box_no', 'employee_name', 'branch_name', 'branch_no']:
+            if req not in df_sheet.columns:
+                df_sheet[req] = ""
                 
-        df_sheet = df_sheet[required_cols].dropna(subset=['box_no'])
-        df_sheet['box_no'] = df_sheet['box_no'].astype(str)
-        df_sheet['employee_name'] = df_sheet['employee_name'].astype(str)
-        df_sheet['branch_name'] = df_sheet['branch_name'].astype(str)
-        df_sheet['branch_no'] = df_sheet['branch_no'].astype(str)
+        # تنظيف البيانات واستبعاد الأسطر الفارغة
+        df_sheet = df_sheet[['box_no', 'employee_name', 'branch_name', 'branch_no']].copy()
+        df_sheet.dropna(subset=['box_no'], inplace=True)
+        
+        # تحويل القيم لنصوص وتنظيف المسافات الزائدة
+        for col in ['box_no', 'employee_name', 'branch_name', 'branch_no']:
+            df_sheet[col] = df_sheet[col].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+            df_sheet[col] = df_sheet[col].replace(['nan', 'None', 'null'], '')
+            
+        df_sheet = df_sheet[df_sheet['box_no'] != '']
 
         conn = get_db_connection()
         c = conn.cursor()
@@ -136,7 +140,7 @@ def sync_employees_from_sheets():
             c.execute('''
                 INSERT OR REPLACE INTO employees (box_no, employee_name, branch_name, branch_no)
                 VALUES (?, ?, ?, ?)
-            ''', (row['box_no'].strip(), row['employee_name'].strip(), row['branch_name'].strip(), row['branch_no'].strip()))
+            ''', (row['box_no'], row['employee_name'], row['branch_name'], row['branch_no']))
         conn.commit()
         conn.close()
         return True, len(df_sheet)
