@@ -677,7 +677,7 @@ def main_app():
                 )
 
     elif page == "closing":
-        # عرض صفحة إغلاق النقصانات المستقلة
+        # عرض صفحة إغلاق النقوصات المستقلة
         show_shortage_closing_page(conn)
 
     elif page == "employees":
