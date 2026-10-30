@@ -738,7 +738,7 @@ def main_app():
                             log_activity(conn, st.session_state.username, "تغيير كلمة المرور", "تم تغيير كلمة المرور الشخصية بنجاح")
                             st.success("✅ تم تغيير كلمة المرور بنجاح!")
 
-    elif page == "users":
+elif page == "users":
         st.subheader("🔑 إدارة حسابات المدققين وصلاحيات الدخول")
         st.caption("إضافة حسابات جديدة، مراجعة كلمات المرور للموظفين، وتعديلها أو حذفها.")
         
@@ -770,6 +770,45 @@ def main_app():
                                 st.error("اسم المستخدم موجود مسبقاً، يرجى اختيار اسم آخر.")
                         else:
                             st.error("يرجى ملء جميع الحقول المطلوبة.")
+                            
+                # ــــــــ إضافـة نموذج تعديل أو حذف مستخدم هنا ــــــــ
+                st.write("---")
+                with st.form("edit_delete_user_form"):
+                    st.markdown("##### ✏️ تعديل أو حذف مستخدم")
+                    df_all_users = pd.read_sql_query("SELECT username FROM users", conn)
+                    user_list = df_all_users['username'].tolist() if not df_all_users.empty else []
+                    
+                    selected_target_user = st.selectbox("اختر اسم المستخدم للتعديل/الحذف", user_list)
+                    edit_pass = st.text_input("كلمة المرور الجديدة (اختياري لتغييرها)", type="password")
+                    edit_role = st.selectbox("تعديل الصلاحية", ["مدقق", "مشرف"])
+                    
+                    col_b1, col_b2 = st.columns(2)
+                    with col_b1:
+                        update_btn = st.form_submit_button("💾 تحديث البيانات", use_container_width=True)
+                    with col_b2:
+                        delete_btn = st.form_submit_button("🗑️ حذف المستخدم", use_container_width=True)
+                        
+                    if update_btn and selected_target_user:
+                        c = conn.cursor()
+                        if edit_pass.strip():
+                            c.execute("UPDATE users SET password = ?, role = ? WHERE username = ?", (edit_pass.strip(), edit_role, selected_target_user))
+                        else:
+                            c.execute("UPDATE users SET role = ? WHERE username = ?", (edit_role, selected_target_user))
+                        conn.commit()
+                        log_activity(conn, st.session_state.username, "تعديل مستخدم", f"تم تعديل بيانات المستخدم: {selected_target_user}")
+                        st.success(f"تم تحديث بيانات المستخدم ({selected_target_user}) بنجاح!")
+                        st.rerun()
+                        
+                    if delete_btn and selected_target_user:
+                        if selected_target_user == "ADMIN":
+                            st.error("⚠️ لا يمكن حذف حساب المشرف الرئيسي (ADMIN) الأساسي للنظام!")
+                        else:
+                            c = conn.cursor()
+                            c.execute("DELETE FROM users WHERE username = ?", (selected_target_user,))
+                            conn.commit()
+                            log_activity(conn, st.session_state.username, "حذف مستخدم", f"تم حذف المستخدم: {selected_target_user}")
+                            st.success(f"تم حذف المستخدم ({selected_target_user}) بنجاح!")
+                            st.rerun()
                             
             with col_u2:
                 st.markdown("##### 📋 جدول المستخدمين وكلمات المرور (خاص بالمدير)")
