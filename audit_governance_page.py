@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -39,7 +38,7 @@ def log_activity(conn, username, action_type, details):
 # الدالة الرئيسية لعرض صفحة الحوكمة والتدقيق المتقدمة
 def show_governance_page(conn):
     st.markdown("### 🛡️ لوحة الحوكمة والتدقيق الرقمي (Audit Governance)")
-    st.caption("سجل التدقيق الرقابي، مؤشرات الأداء التراكمي، والتوقيع والاعتماد الرقمي للتقارير")
+    st.caption("سجل التدقيق الرقابي ومؤشرات الأداء التراكمي للموظفين")
     st.write("---")
 
     init_audit_log_table(conn)
