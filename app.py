@@ -108,7 +108,6 @@ def init_db():
         )
     ''')
     
-    # التأكد من وجود حساب ADMIN الأساسي دون مسح الحسابات الأخرى المضافة مسبقاً
     c.execute("INSERT OR IGNORE INTO users (username, password, role, full_name) VALUES (?, ?, ?, ?)", 
               ("ADMIN", "1234", "مشرف رئيسي", "مدير النظام"))
 
@@ -335,7 +334,7 @@ def main_app():
             pages = {
                 "🏠 لوحة المتابعة اليومية": "daily",
                 "📁 المطابقات الشهرية والترحيل": "archive",
-                "📁 إغلاق النقوصات": "closing",
+                "📁 إغلاق النقصانات": "closing",
                 "👥 إدارة الموظفين (Sheets)": "employees",
                 "📊 المؤشرات والتقارير الإحصائية": "reports",
                 "🛡️ الحوكمة والسجل الرقابي": "governance",
@@ -346,7 +345,7 @@ def main_app():
             pages = {
                 "🏠 لوحة المتابعة اليومية": "daily",
                 "📁 المطابقات الشهرية والترحيل": "archive",
-                "📁 إغلاق النقوصات": "closing",
+                "📁 إغلاق النقصانات": "closing",
                 "📊 المؤشرات والتقارير الإحصائية": "reports",
                 "🔐 تغيير كلمة المرور": "password"
             }
@@ -598,8 +597,8 @@ def main_app():
                             migrated_count += 1
                             
                     conn.commit()
-                    log_activity(conn, st.session_state.username, "ترحيل أرشيف", f"تاريخ الترحيل: {target_date_str} (إدراج: {migrated_count}, تحديث: {updated_count})")
-                    st.success(f"✅ تمت عملية المزامنة والترحيل بنجاح!")
+                    log_activity(conn, st.session_state.username, "ترحيل أرشيف", f"تاريخ الترحيل: {target_date_str}")
+                    st.success("✅ تمت عملية المزامنة والترحيل بنجاح!")
                     st.rerun()
         
         st.write("---")
@@ -631,7 +630,7 @@ def main_app():
             params.append(selected_box_filter)
             
         df_export = pd.read_sql_query(query, conn, params=params)
-        report_title_str = f"تقرير الفترة من {start_p_date} إلى {end_p_date} (فرع: {selected_branch_filter}, صندوق: {selected_box_filter})"
+        report_title_str = f"تقرير الفترة من {start_p_date} إلى {end_p_date}"
 
         if df_export.empty:
             st.info("⚠️ لا توجد سجلات مطابقة لمعايير البحث المحددة في الأرشيف.")
@@ -661,7 +660,7 @@ def main_app():
                 st.download_button(
                     label="📊 تحميل كملف Excel / CSV",
                     data=excel_data,
-                    file_name=f"custom_audit_report.csv",
+                    file_name="custom_audit_report.csv",
                     mime="text/csv",
                     use_container_width=True
                 )
@@ -671,13 +670,12 @@ def main_app():
                 st.download_button(
                     label="📄 تحميل كملف PDF",
                     data=pdf_archive_data,
-                    file_name=f"custom_audit_report.pdf",
+                    file_name="custom_audit_report.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
 
     elif page == "closing":
-        # عرض صفحة إغلاق النقوصات المستقلة
         show_shortage_closing_page(conn)
 
     elif page == "employees":
@@ -738,7 +736,7 @@ def main_app():
                             log_activity(conn, st.session_state.username, "تغيير كلمة المرور", "تم تغيير كلمة المرور الشخصية بنجاح")
                             st.success("✅ تم تغيير كلمة المرور بنجاح!")
 
-elif page == "users":
+    elif page == "users":
         st.subheader("🔑 إدارة حسابات المدققين وصلاحيات الدخول")
         st.caption("إضافة حسابات جديدة، مراجعة كلمات المرور للموظفين، وتعديلها أو حذفها.")
         
