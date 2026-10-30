@@ -126,7 +126,7 @@ def show_shortage_closing_page(conn):
         </div>
     ''', unsafe_allow_html=True)
 
-    st.subheader("📁 إنشاء وتصدير نموذج إقفال النقصانات")
+    st.subheader("📁 إنشاء وتصدير نموذج إقفال النقوصات")
     st.caption("يرجى اختيار الصندوق لجلب بيانات الموظف والفرع تلقائياً وتوليد نموذج الإقفال المعتمد.")
 
     col_h1, col_h2 = st.columns(2)
