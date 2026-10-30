@@ -20,6 +20,16 @@ def init_audit_log_table(conn):
             details TEXT
         )
     ''')
+    # جدول خاص بتسجيل الاعتمادات والتوقيعات الرقمية للتقارير
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS digital_signoffs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sign_date TEXT,
+            username TEXT,
+            report_title TEXT,
+            notes TEXT
+        )
+    ''')
     conn.commit()
 
 # دالة لتسجيل أي نشاط رقابي
@@ -38,7 +48,7 @@ def log_activity(conn, username, action_type, details):
 # الدالة الرئيسية لعرض صفحة الحوكمة والتدقيق المتقدمة
 def show_governance_page(conn):
     st.markdown("### 🛡️ لوحة الحوكمة والتدقيق الرقمي (Audit Governance)")
-    st.caption("سجل التدقيق الرقابي ومؤشرات الأداء التراكمي للموظفين")
+    st.caption("سجل التدقيق الرقابي، مؤشرات الأداء التراكمي، والتوقيع والاعتماد الرقمي للتقارير")
     st.write("---")
 
     init_audit_log_table(conn)
@@ -103,8 +113,8 @@ def show_governance_page(conn):
 
                     c1, c2, c3, c4 = st.columns(4)
                     c1.metric("نسبة الالتزام الرقابي", f"{commitment_rate}%")
-                    c2.metric("أيام مطابقة ✅", matches)
-                    c3.metric("أيام غير مطابقة 🚨", non_matches)
+                    c2.metric("أيام مطابق ✅", matches)
+                    c3.metric("أيام غير مطابق 🚨", non_matches)
                     c4.metric("أيام مجاز 🔹", leaves)
 
                     st.markdown("##### 📋 تفاصيل سجل الأداء التاريخي للموظف:")
@@ -118,3 +128,47 @@ def show_governance_page(conn):
                         "notes": "الملاحظات",
                         "audit_time": "وقت التدقيق"
                     }), use_container_width=True, hide_index=True)
+
+    st.write("---")
+
+    # 3. قسم التوقيع والاعتماد الرقمي للتقارير (Digital Sign-off)
+    with st.container():
+        st.markdown('''
+            <div style="background-color: #ffffff; padding: 15px; border-radius: 10px; border-right: 5px solid #38a169; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 20px;">
+                <h4 style="margin:0; color: #38a169;">✍️ 3. التوقيع والاعتماد الرقمي للتقارير (Digital Sign-off)</h4>
+                <p style="margin:5px 0 0 0; font-size: 13px; color: #666;">اعتماد رسمي موثق ومختوم رقمياً للتقارير الصادرة من قسم التدقيق الداخلي والرقابة.</p>
+            </div>
+        ''', unsafe_allow_html=True)
+
+        with st.form("digital_signoff_form"):
+            report_title_input = st.text_input("عنوان التقرير المراد اعتماده وتوقيعه رقمياً:", "تقرير التدقيق والرقابة الميدانية الشامل")
+            sign_notes = st.text_area("ملاحظات الاعتماد والختم الرقابي:", "تمت مراجعة وتدقيق الحركات والبيانات الواردة وأصبحت معتمدة رسمياً.")
+            
+            submit_sign = st.form_submit_button("✍️ اعتماد وتوقيع التقرير رقمياً", use_container_width=True)
+            
+            if submit_sign:
+                if report_title_input.strip():
+                    current_sign_time = now_local().strftime("%Y-%m-%d %I:%M:%S %p")
+                    c = conn.cursor()
+                    c.execute('''
+                        INSERT INTO digital_signoffs (sign_date, username, report_title, notes)
+                        VALUES (?, ?, ?, ?)
+                    ''', (current_sign_time, st.session_state.username, report_title_input.strip(), sign_notes.strip()))
+                    conn.commit()
+                    log_activity(conn, st.session_state.username, "اعتماد وتوقيع رقمي", f"تم اعتماد التقرير: {report_title_input.strip()}")
+                    st.success(f"✅ تم اعتماد وتوقيع التقرير رقمياً بنجاح بواسطة المستخدم ({st.session_state.username}) بتاريخ ({current_sign_time})!")
+                else:
+                    st.error("يرجى إدخال عنوان التقرير المراد اعتماده.")
+
+        st.markdown("##### 📜 سجل الاعتمادات والتوقيعات الرقمية السابقة:")
+        df_signs = pd.read_sql_query("SELECT * FROM digital_signoffs ORDER BY id DESC", conn)
+        if df_signs.empty:
+            st.info("ℹ️ لا توجد اعتمادات رقمية مسجلة حتى الآن.")
+        else:
+            st.dataframe(df_signs.rename(columns={
+                "id": "معرف الاعتماد",
+                "sign_date": "وقت وتاريخ الاعتماد",
+                "username": "المعتمد المسؤول",
+                "report_title": "عنوان التقرير",
+                "notes": "الملاحظات الرقابية"
+            }), use_container_width=True, hide_index=True)
