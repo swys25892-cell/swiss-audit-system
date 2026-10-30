@@ -316,47 +316,57 @@ def login_screen():
                     st.error("اسم المستخدم أو كلمة المرور غير صحيحة")
 
 def main_app():
-    with st.sidebar:
+with st.sidebar:
+        # شعار الشركة العلوي
         logo_file = "LOGO-removebg-preview.png"
         if os.path.exists(logo_file):
-            st.image(logo_file, use_column_width=True)
+            st.image(logo_file, width=150)
         
-        st.markdown('''
-            <div style="text-align: center; padding: 10px; background-color: #f1f1f1; border-radius: 10px; margin-bottom: 15px;">
-                <h4 style="margin: 0; color: #111;">💼 سويس للصرافة</h4>
-                <p style="margin: 5px 0 0 0; font-size: 12px; color: #555;">التدقيق الداخلي والرقابة</p>
+        st.write("---")
+        
+        # بطاقة معلومات المستخدم والصلاحية
+        st.markdown(f'''
+            <div style="background-color: #f7fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px; font-size: 13px;">
+                <p style="margin: 0 0 5px 0;">👤 <b>المستخدم:</b> <span style="color: #2b6cb0;">{st.session_state.username}</span></p>
+                <p style="margin: 0;">🔒 <b>الصلاحية:</b> <span style="color: #276749;">{st.session_state.role}</span></p>
             </div>
         ''', unsafe_allow_html=True)
-        st.markdown(f"👤 **المستخدم:** `{st.session_state.username}`")
-        st.markdown(f"🔒 **الصلاحية:** `{st.session_state.user_role}`")
-        st.write("---")
-    
-    # تحديد القوائم بناءً على الصلاحيات بدقة
-    menu_options = [
-        "📋 لوحة المتابعة والتدقيق اليومي", 
-        "📁 المطابقات الشهرية والترحيل",
-        "👥 قاعدة بيانات الموظفين والصناديق (Google Sheets)",
-        "🔐 تغيير كلمة المرور الشخصية",
-        "📊 المؤشرات والتقارير الإحصائية"
-    ]
-    
-    # يوزر ADMIN حصرياً يرى إدارة المستخدمين والسجل الرقابي
-    if st.session_state.username == "ADMIN":
-        menu_options.insert(3, "🔑 إدارة المستخدمين والصلاحيات")
-        menu_options.append("🛡️ الحوكمة والسجل الرقابي")
-    elif st.session_state.user_role == "مشرف":
-        # المشرف يرى الحوكمة ولكن لا يرى إدارة المستخدمين (ولا يمتلك التنظيف الكامل)
-        menu_options.append("🛡️ الحوكمة والسجل الرقابي")
-    # المدقق: لا يرى صفحة إدارة المستخدمين نهائياً، ولا يرى الحوكمة الكاملة (حسب الرغبة)
+        
+        st.markdown("##### 🧭 قائمة التنقل الرئيسي")
+        
+        # تحديد قائمة الصفحات حسب صلاحية المستخدم
+        if st.session_state.role == "مشرف رئيسي":
+            pages = {
+                "🏠 لوحة المتابعة اليومية": "daily",
+                "📊 المؤشرات والتقارير الإحصائية": "reports",
+                "🛡️ الحوكمة والسجل الرقابي": "governance",
+                "👥 إدارة المستخدمين والصلاحيات": "users"
+            }
+        else:
+            pages = {
+                "🏠 لوحة المتابعة اليومية": "daily",
+                "📊 المؤشرات والتقارير الإحصائية": "reports"
+            }
+        
+        # استخدام نظام التخزين المؤقت لتتبع الصفحة النشطة عبر الأزرار
+        if "selected_page" not in st.session_state:
+            st.session_state.selected_page = "daily"
 
-    menu = st.sidebar.selectbox("قائمة التنقل الرئيسي", menu_options)
-    
-    st.sidebar.write("---")
-    if st.sidebar.button("تسجيل الخروج", use_container_width=True):
-        st.session_state.logged_in = False
-        st.session_state.username = ""
-        st.session_state.user_role = ""
-        st.rerun()
+        # أزرار التنقل الجانبية العصرية (بديل القائمة المنسدلة)
+        for page_name, page_key in pages.items():
+            is_active = st.session_state.selected_page == page_key
+            btn_type = "primary" if is_active else "secondary"
+            if st.button(page_name, use_container_width=True, type=btn_type):
+                st.session_state.selected_page = page_key
+                st.rerun()
+
+        st.write("---")
+        
+        if st.button("🚪 تسجيل الخروج", use_container_width=True):
+            st.session_state.logged_in = False
+            st.session_state.username = ""
+            st.session_state.role = ""
+            st.rerun()
 
     st.markdown('''
         <div style="background-color: #ffffff; padding: 18px; border-radius: 12px; border-right: 6px solid #d9ea37; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px; text-align: center;">
