@@ -21,6 +21,19 @@ def init_audit_log_table(conn):
     ''')
     conn.commit()
 
+# دالة تسجيل النشاط الرقابي لتجنب خطأ الاستيراد مع app.py
+def log_activity(conn, username, action_type, details):
+    try:
+        c = conn.cursor()
+        init_audit_log_table(conn)
+        c.execute('''
+            INSERT INTO audit_activity_log (action_time, username, action_type, details)
+            VALUES (?, ?, ?, ?)
+        ''', (now_local().strftime("%Y-%m-%d %I:%M:%S %p"), username, action_type, details))
+        conn.commit()
+    except Exception as e:
+        print("خطأ في تسجيل النشاط:", e)
+
 def show_governance_page(conn):
     st.markdown("### 🛡️ لوحة الحوكمة والتدقيق الرقمي (Metro Dashboard)")
     st.caption("سجل التدقيق الرقابي ومؤشرات الأداء التراكمي للموظفين بطراز المربعات العصرية")
@@ -28,7 +41,7 @@ def show_governance_page(conn):
 
     init_audit_log_table(conn)
 
-    # تقسيم الواجهة إلى مربعين رئيسيين بجانب بعضهما
+    # تقسيم الواجهة إلى مربعين رئيسيين بجانب بعضهما (طراز ويندوز فون)
     col1, col2 = st.columns(2)
 
     with col1:
