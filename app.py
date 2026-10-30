@@ -72,6 +72,16 @@ def init_db():
         )
     ''')
     
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS audit_activity_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            action_time TEXT,
+            username TEXT,
+            action_type TEXT,
+            details TEXT
+        )
+    ''')
+    
     c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='employees'")
     _row = c.fetchone()
     if _row and "UNIQUE(branch_no, box_no)" not in (_row[0] or ""):
@@ -88,6 +98,7 @@ def init_db():
         )
     ''')
     
+    # جدول المستخدمين والصلاحيات (استبدل القديم بهذا)
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
@@ -97,11 +108,9 @@ def init_db():
         )
     ''')
     
-    c.execute("SELECT COUNT(*) FROM users")
-    if c.fetchone()[0] == 0:
-        c.execute("INSERT OR IGNORE INTO users (username, password, role, full_name) VALUES (?, ?, ?, ?)", 
-                  ("ADMIN", "1234", "مشرف رئيسي", "مدير النظام"))
-        conn.commit()
+    # التأكد من وجود حساب ADMIN الأساسي دون مسح الحسابات الأخرى
+    c.execute("INSERT OR IGNORE INTO users (username, password, role, full_name) VALUES (?, ?, ?, ?)", 
+              ("ADMIN", "1234", "مشرف رئيسي", "مدير النظام"))
 
     conn.commit()
     conn.close()
