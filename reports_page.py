@@ -1,9 +1,7 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
-from datetime import datetime
-import os
 import urllib.request
+import os
 from fpdf import FPDF
 import arabic_reshaper
 from bidi.algorithm import get_display
@@ -18,8 +16,7 @@ def ar(text):
     except:
         return str(text)
 
-# دالة توليد تقرير PDF للمتكررين مع تفاصيل الأيام
-def generate_non_matching_pdf(df_data, report_title):
+def generate_pdf_report_generic(df_data, report_title):
     font_path = "Amiri-Regular.ttf"
     if not os.path.exists(font_path):
         try:
@@ -41,192 +38,183 @@ def generate_non_matching_pdf(df_data, report_title):
 
     if os.path.exists(font_path):
         pdf.add_font("Amiri", fname=font_path)
-        pdf.set_font("Amiri", size=14)
+        pdf.set_font("Amiri", size=16)
     else:
-        pdf.set_font("Arial", size=14)
+        pdf.set_font("Arial", size=16)
     
-    pdf.cell(190, 10, text=ar("شركة سويس للصرافة - قسم التدقيق الداخلي والرقابة"), new_x="LMARGIN", new_y="NEXT", align='C')
+    pdf.cell(190, 10, text=ar("شركة سويس للصرافة - تقرير المؤشرات والإحصاءات"), new_x="LMARGIN", new_y="NEXT", align='C')
     
     if os.path.exists(font_path):
-        pdf.set_font("Amiri", size=11)
+        pdf.set_font("Amiri", size=12)
     else:
-        pdf.set_font("Arial", size=11)
+        pdf.set_font("Arial", size=12)
         
     pdf.cell(190, 8, text=ar(report_title), new_x="LMARGIN", new_y="NEXT", align='C')
-    pdf.ln(6)
+    pdf.ln(8)
     
-    if os.path.exists(font_path):
-        pdf.set_font("Amiri", size=8)
+    if df_data.empty:
+        pdf.cell(190, 10, text=ar("لا توجد بيانات متاحة لهذا التقرير."), new_x="LMARGIN", new_y="NEXT", align='C')
     else:
-        pdf.set_font("Arial", size=8)
+        if os.path.exists(font_path):
+            pdf.set_font("Amiri", size=9)
+        else:
+            pdf.set_font("Arial", size=9)
+            
+        columns = list(df_data.columns)
+        col_width = 190 / len(columns) if len(columns) > 0 else 190
         
-    # أعمدة الجدول مع تخصيص العرض لتسع تفاصيل الأيام
-    headers = [
-        ("تفاصيل الأيام", 50),
-        ("عدد غ.م", 20), 
-        ("اسم الموظف", 40), 
-        ("رقم الصندوق", 20), 
-        ("اسم الفرع", 40), 
-        ("رقم الفرع", 20)
-    ]
-    
-    for i, (h, w) in enumerate(headers):
-        last = i == len(headers) - 1
-        pdf.cell(w, 8, ar(h), border=1, align='C',
-                 new_x="LMARGIN" if last else "RIGHT",
-                 new_y="NEXT" if last else "TOP")
-    
-    for _, row in df_data.iterrows():
-        values = [
-            (str(row.get("non_match_dates", "")), 50),
-            (str(row.get("non_match_count", 0)), 20),
-            (str(row.get("employee_name", "")), 40),
-            (str(row.get("box_no", "")), 20),
-            (str(row.get("branch_name", "")), 40),
-            (str(row.get("branch_no", "")), 20)
-        ]
-        for i, (v, w) in enumerate(values):
-            last = i == len(values) - 1
-            pdf.cell(w, 8, ar(v), border=1, align='C',
+        for i, col_name in enumerate(columns):
+            last = i == len(columns) - 1
+            pdf.cell(col_width, 8, ar(str(col_name)), border=1, align='C',
                      new_x="LMARGIN" if last else "RIGHT",
                      new_y="NEXT" if last else "TOP")
+            
+        for _, row in df_data.iterrows():
+            for i, col_name in enumerate(columns):
+                last = i == len(columns) - 1
+                val = str(row[col_name])
+                pdf.cell(col_width, 8, ar(val), border=1, align='C',
+                         new_x="LMARGIN" if last else "RIGHT",
+                         new_y="NEXT" if last else "TOP")
+
+    # توقيع اسم المستخدم في أسفل التقرير
+    pdf.ln(15)
+    if os.path.exists(font_path):
+        pdf.set_font("Amiri", size=10)
+    else:
+        pdf.set_font("Arial", size=10)
+        
+    current_user = st.session_state.get("username", "ADMIN")
+    sign_text = f"تم التدقيق والاعتماد الرقمي بواسطة المستخدم: {current_user}"
+    pdf.cell(190, 8, text=ar(sign_text), new_x="LMARGIN", new_y="NEXT", align='R')
     
     return bytes(pdf.output())
 
-# الدالة الرئيسية لعرض صفحة التقارير والمؤشرات
 def show_reports_page(conn):
-    st.markdown("### 📊 لوحة المؤشرات والتقارير الإحصائية والرقابية")
+    st.markdown("### 📊 لوحة المؤشرات والتقارير الإحصائية (Metro Dashboard)")
     st.caption("مركز التقارير التحليلية وتقييم المخاطر والأداء لشركة سويس للصرافة")
     st.write("---")
 
-    # 1. المربع الأول: تقرير المخالفات المتكررة (3 مرات فأكثر) مع تفاصيل الأيام
-    with st.container():
+    # تقسيم الواجهة إلى 3 مربعات متساوية بجانب بعضها (طراز ويندوز فون)
+    col1, col2, col3 = st.columns(3)
+
+    # المربع الأول: الحالات المتكررة
+    with col1:
         st.markdown('''
-            <div style="background-color: #ffffff; padding: 15px; border-radius: 10px; border-right: 5px solid #c53030; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 20px;">
-                <h4 style="margin:0; color: #c53030;">🚨 1. تقرير الحالات غير المطابقة المتكررة (3 مرات فأكثر مع تواريخ الأيام)</h4>
-                <p style="margin:5px 0 0 0; font-size: 13px; color: #666;">رصد الموظفين والصناديق التي حصلت على 3 شارات غير مطابق أو أكثر مع عرض تفاصيل تواريخ الأيام واستخراج تقرير PDF عاجل.</p>
+            <div style="background: linear-gradient(135deg, #fff5f5 0%, #fed7d7 100%); padding: 20px; border-radius: 12px; border: 2px solid #feb2b2; text-align: center; height: 240px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between;">
+                <div>
+                    <h3 style="color: #9b2c2c; margin: 0 0 10px 0; font-size: 18px;">🚨 الحالات المتكررة</h3>
+                    <p style="color: #742a2a; font-size: 12px; margin: 0;">رصد الموظفين والصناديق التي حصلت على 3 مخالفات فأكثر.</p>
+                </div>
+                <div style="background-color: #ffffff; padding: 10px; border-radius: 8px; font-weight: bold; color: #9b2c2c; font-size: 13px;">
+                    تقرير المخالفات المتكررة
+                </div>
             </div>
         ''', unsafe_allow_html=True)
         
-        # استعلام لجلب العدد وتاريخ كل يوم حصلت فيه المخالفة مدعوماً بـ GROUP_CONCAT
-        query_repeat = '''
-            SELECT branch_no, branch_name, box_no, employee_name, 
-                   COUNT(DISTINCT audit_date) as non_match_count,
-                   GROUP_CONCAT(audit_date, '، ') as non_match_dates
+        btn_box1 = st.button("عرض مربع الحالات المتكررة", use_container_width=True, key="btn_tile_1")
+
+    # المربع الثاني: الأداء الشامل
+    with col2:
+        st.markdown('''
+            <div style="background: linear-gradient(135deg, #ebf8ff 0%, #bee3f8 100%); padding: 20px; border-radius: 12px; border: 2px solid #90cdf4; text-align: center; height: 240px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between;">
+                <div>
+                    <h3 style="color: #2b6cb0; margin: 0 0 10px 0; font-size: 18px;">📊 الأداء الشامل</h3>
+                    <p style="color: #2c5282; font-size: 12px; margin: 0;">مقارنة التزام الفروع والموظفين بناءً على المطابقة والإجازات.</p>
+                </div>
+                <div style="background-color: #ffffff; padding: 10px; border-radius: 8px; font-weight: bold; color: #2b6cb0; font-size: 13px;">
+                    تقرير نسب الالتزام
+                </div>
+            </div>
+        ''', unsafe_allow_html=True)
+        
+        btn_box2 = st.button("عرض مربع الأداء الشامل", use_container_width=True, key="btn_tile_2")
+
+    # المربع الثالث: مصفوفة المخاطر
+    with col3:
+        st.markdown('''
+            <div style="background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%); padding: 20px; border-radius: 12px; border: 2px solid #cbd5e0; text-align: center; height: 240px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between;">
+                <div>
+                    <h3 style="color: #2d3748; margin: 0 0 10px 0; font-size: 18px;">⚠️ مصفوفة المخاطر</h3>
+                    <p style="color: #4a5568; font-size: 12px; margin: 0;">تحليل درجة الخطر لكل فرع واستهداف الجولات التفتيشية.</p>
+                </div>
+                <div style="background-color: #ffffff; padding: 10px; border-radius: 8px; font-weight: bold; color: #2d3748; font-size: 13px;">
+                    تقرير مصفوفة المخاطر
+                </div>
+            </div>
+        ''', unsafe_allow_html=True)
+        
+        btn_box3 = st.button("عرض مربع مصفوفة المخاطر", use_container_width=True, key="btn_tile_3")
+
+    st.write("---")
+
+    # عرض محتوى المربع المحدد تفاعلياً عند الضغط عليه
+    if btn_box1 or "active_tile" not in st.session_state:
+        st.session_state.active_tile = 1
+
+    if btn_box2:
+        st.session_state.active_tile = 2
+
+    if btn_box3:
+        st.session_state.active_tile = 3
+
+    # محتوى المربع الأول
+    if st.session_state.active_tile == 1:
+        st.markdown("#### 🚨 تفاصيل تقرير الحالات غير المطابقة المتكررة (3 مرات فأكثر)")
+        df_repeat = pd.read_sql_query('''
+            SELECT employee_name AS "اسم الموظف", branch_name AS "اسم الفرع", box_no AS "رقم الصندوق", COUNT(*) AS "عدد المخالفات"
             FROM monthly_audit_archive
             WHERE status = 'غير مطابق'
-            GROUP BY branch_no, box_no, employee_name
-            HAVING non_match_count >= 3
-            ORDER BY non_match_count DESC
-        '''
-        df_repeat = pd.read_sql_query(query_repeat, conn)
-        
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            if df_repeat.empty:
-                st.info("🎉 لا يوجد حالياً أي موظف تجاوز 3 مخالفات غير مطابقة في الأرشيف الشهري.")
-            else:
-                st.dataframe(df_repeat.rename(columns={
-                    "branch_no": "رقم الفرع",
-                    "branch_name": "اسم الفرع",
-                    "box_no": "رقم الصندوق",
-                    "employee_name": "اسم الموظف",
-                    "non_match_count": "تكرار غير مطابق",
-                    "non_match_dates": "تفاصيل الأيام (التواريخ)"
-                }), use_container_width=True, hide_index=True)
-        
-        with col2:
-            if not df_repeat.empty:
-                pdf_data = generate_non_matching_pdf(df_repeat, "تقرير الموظفين الأكثر تكراراً لعدم المطابقة مع تفاصيل الأيام")
-                st.download_button(
-                    label="📄 تحميل تقرير PDF مع تفاصيل الأيام",
-                    data=pdf_data,
-                    file_name="repeated_non_matching_with_dates.pdf",
-                    mime="application/pdf",
-                    use_container_width=True
-                )
-
-    st.write("---")
-
-    # 2. المربع الثاني: تقرير الأداء الشامل والالتزام
-    with st.container():
-        st.markdown('''
-            <div style="background-color: #ffffff; padding: 15px; border-radius: 10px; border-right: 5px solid #2b6cb0; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 20px;">
-                <h4 style="margin:0; color: #2b6cb0;">🏆 2. تقرير الأداء الشامل ونسب الالتزام</h4>
-                <p style="margin:5px 0 0 0; font-size: 13px; color: #666;">مقارنة التزام الفروع والموظفين بناءً على أيام المطابقة، عدم المطابقة والإجازات.</p>
-            </div>
-        ''', unsafe_allow_html=True)
-        
-        df_perf = pd.read_sql_query('''
-            SELECT branch_name, 
-                   COUNT(CASE WHEN status = 'مطابق' THEN 1 END) as matches,
-                   COUNT(CASE WHEN status = 'غير مطابق' THEN 1 END) as non_matches,
-                   COUNT(CASE WHEN status = 'مجاز' THEN 1 END) as leaves
-            FROM monthly_audit_archive
-            GROUP BY branch_name
+            GROUP BY employee_name, branch_name, box_no
+            HAVING COUNT(*) >= 3
+            ORDER BY COUNT(*) DESC
         ''', conn)
         
-        if df_perf.empty:
-            st.info("⚠️ لا توجد بيانات كافية في الأرشيف لحساب نسبة الأداء بعد.")
+        if df_repeat.empty:
+            st.info("🎉 لا توجد حالياً أي حالات لموظفين تجاوزوا 3 مخالفات غير مطابقة في الأرشيف الشهري.")
         else:
-            df_perf["إجمالي الأيام"] = df_perf["matches"] + df_perf["non_matches"]
-            df_perf["نسبة الالتزام"] = (df_perf["matches"] / df_perf["إجمالي الأيام"] * 100).fillna(0).round(1).astype(str) + "%"
-            st.dataframe(df_perf.rename(columns={
-                "branch_name": "اسم الفرع",
-                "matches": "أيام مطابقة",
-                "non_matches": "أيام غير مطابقة",
-                "leaves": "أيام مجاز"
-            }), use_container_width=True, hide_index=True)
+            st.dataframe(df_repeat, use_container_width=True, hide_index=True)
+            pdf_data = generate_pdf_report_generic(df_repeat, "تقرير الحالات المتكررة (3 مرات فأكثر)")
+            st.download_button("📥 تحميل التقرير كملف PDF", data=pdf_data, file_name="repeat_violations_report.pdf", mime="application/pdf", use_container_width=True)
 
-    st.write("---")
-
-    # 3. المربع الثالث: تقرير تقييم المخاطر الرقابية
-    with st.container():
-        st.markdown('''
-            <div style="background-color: #ffffff; padding: 15px; border-radius: 10px; border-right: 5px solid #dd6b20; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 20px;">
-                <h4 style="margin:0; color: #dd6b20;">⚠️ 3. تقرير مصفوفة المخاطر وأولويات التفتيش الميداني</h4>
-                <p style="margin:5px 0 0 0; font-size: 13px; color: #666;">تحليل درجة الخطر لكل فرع واستهداف الجولات التفتيشية الميدانية.</p>
-            </div>
-        ''', unsafe_allow_html=True)
+    # محتوى المربع الثاني
+    elif st.session_state.active_tile == 2:
+        st.markdown("#### 📊 تفاصيل تقرير الأداء الشامل ونسب الالتزام للموظفين")
+        df_all_arch = pd.read_sql_query("SELECT employee_name, status FROM monthly_audit_archive WHERE employee_name IS NOT NULL AND employee_name != ''", conn)
         
+        if df_all_arch.empty:
+            st.info("⚠️ لا توجد بيانات مؤرشفة كافية لحساب نسبة الأداء.")
+        else:
+            summary_list = []
+            for emp in df_all_arch['employee_name'].unique():
+                emp_df = df_all_arch[df_all_arch['employee_name'] == emp]
+                total = len(emp_df)
+                matches = len(emp_df[emp_df['status'] == 'مطابق'])
+                leaves = len(emp_df[emp_df['status'] == 'مجاز'])
+                effective_days = total - leaves
+                rate = round((matches / effective_days * 100), 1) if effective_days > 0 else 100.0
+                summary_list.append({"اسم الموظف": emp, "إجمالي الأيام": total, "أيام المطابقة": matches, "أيام الإجازات/المجاز": leaves, "نسبة الالتزام %": rate})
+            
+            df_scorecard = pd.DataFrame(summary_list).sort_values(by="نسبة الالتزام %", ascending=False)
+            st.dataframe(df_scorecard, use_container_width=True, hide_index=True)
+            pdf_data = generate_pdf_report_generic(df_scorecard, "تقرير الأداء الشامل ونسب الالتزام")
+            st.download_button("📥 تحميل التقرير كملف PDF", data=pdf_data, file_name="comprehensive_performance_report.pdf", mime="application/pdf", use_container_width=True)
+
+    # محتوى المربع الثالث
+    elif st.session_state.active_tile == 3:
+        st.markdown("#### ⚠️ تفاصيل تقرير مصفوفة المخاطر وأولويات التفتيش الميداني")
         df_risk = pd.read_sql_query('''
-            SELECT branch_name, 
-                   COUNT(CASE WHEN status = 'غير مطابق' THEN 1 END) as total_non_matches
+            SELECT branch_name AS "اسم الفرع", 
+                   SUM(CASE WHEN status = 'غير مطابق' THEN 1 ELSE 0 END) as "عدد المخالفات",
+                   COUNT(*) as "إجمالي التدقيقات"
             FROM monthly_audit_archive
             GROUP BY branch_name
-            ORDER BY total_non_matches DESC
+            ORDER BY "عدد المخالفات" DESC
         ''', conn)
         
         if df_risk.empty:
-            st.info("🟢 جميع الفروع ضمن نطاق المخاطر المنخفض حالياً.")
+            st.info("ℹ️ جميع الفروع ضمن نطاق المخاطر المنخفض حالياً.")
         else:
-            st.dataframe(df_risk.rename(columns={
-                "branch_name": "اسم الفرع",
-                "total_non_matches": "إجمالي حالات عدم المطابقة"
-            }), use_container_width=True, hide_index=True)
-
-    st.write("---")
-
-    # 4. المربع الرابع: نتائج وتطور الفترات السابقة
-    with st.container():
-        st.markdown('''
-            <div style="background-color: #ffffff; padding: 15px; border-radius: 10px; border-right: 5px solid #2f855a; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 20px;">
-                <h4 style="margin:0; color: #2f855a;">📈 4. تقرير نتائج وتطور الفترات السابقة</h4>
-                <p style="margin:5px 0 0 0; font-size: 13px; color: #666;">متابعة خط اتجاه الالتزام والمخالفات عبر الأشهر والأيام السابقة.</p>
-            </div>
-        ''', unsafe_allow_html=True)
-        
-        df_trends = pd.read_sql_query('''
-            SELECT audit_date as التاريخ,
-                   COUNT(CASE WHEN status = 'مطابق' THEN 1 END) as المطابق,
-                   COUNT(CASE WHEN status = 'غير مطابق' THEN 1 END) as غير_المطابق
-            FROM monthly_audit_archive
-            GROUP BY audit_date
-            ORDER BY audit_date DESC
-            LIMIT 30
-        ''', conn)
-        
-        if df_trends.empty:
-            st.info("⚠️ لا توجد سجلات تاريخية سابقة لعرض الاتجاهات.")
-        else:
-            st.line_chart(df_trends.set_index("التاريخ"))
+            st.dataframe(df_risk, use_container_width=True, hide_index=True)
+            pdf_data = generate_pdf_report_generic(df_risk, "تقرير مصفوفة المخاطر والأولويات الميدانية")
+            st.download_button("📥 تحميل التقرير كملف PDF", data=pdf_data, file_name="risk_matrix_report.pdf", mime="application/pdf", use_container_width=True)
