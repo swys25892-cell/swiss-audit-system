@@ -771,7 +771,6 @@ elif page == "users":
                         else:
                             st.error("يرجى ملء جميع الحقول المطلوبة.")
                             
-                # ــــــــ إضافـة نموذج تعديل أو حذف مستخدم هنا ــــــــ
                 st.write("---")
                 with st.form("edit_delete_user_form"):
                     st.markdown("##### ✏️ تعديل أو حذف مستخدم")
@@ -779,7 +778,7 @@ elif page == "users":
                     user_list = df_all_users['username'].tolist() if not df_all_users.empty else []
                     
                     selected_target_user = st.selectbox("اختر اسم المستخدم للتعديل/الحذف", user_list)
-                    edit_pass = st.text_input("كلمة المرور الجديدة (اختياري لتغييرها)", type="password")
+                    edit_pass = st.text_input("كلمة المرور الجديدة (اختياري)", type="password")
                     edit_role = st.selectbox("تعديل الصلاحية", ["مدقق", "مشرف"])
                     
                     col_b1, col_b2 = st.columns(2)
