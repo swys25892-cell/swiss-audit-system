@@ -8,7 +8,6 @@ TZ = ZoneInfo("Asia/Amman")
 def now_local():
     return datetime.now(TZ)
 
-# دالة لإنشاء جدول سجل التدقيق في قاعدة البيانات إذا لم يكن موجوداً
 def init_audit_log_table(conn):
     c = conn.cursor()
     c.execute('''
@@ -22,36 +21,56 @@ def init_audit_log_table(conn):
     ''')
     conn.commit()
 
-# دالة لتسجيل أي نشاط رقابي
-def log_activity(conn, username, action_type, details):
-    try:
-        c = conn.cursor()
-        init_audit_log_table(conn)
-        c.execute('''
-            INSERT INTO audit_activity_log (action_time, username, action_type, details)
-            VALUES (?, ?, ?, ?)
-        ''', (now_local().strftime("%Y-%m-%d %I:%M:%S %p"), username, action_type, details))
-        conn.commit()
-    except Exception as e:
-        print("خطأ في تسجيل النشاط:", e)
-
-# الدالة الرئيسية لعرض صفحة الحوكمة والتدقيق المتقدمة
 def show_governance_page(conn):
-    st.markdown("### 🛡️ لوحة الحوكمة والتدقيق الرقمي (Audit Governance)")
-    st.caption("سجل التدقيق الرقابي ومؤشرات الأداء التراكمي للموظفين")
+    st.markdown("### 🛡️ لوحة الحوكمة والتدقيق الرقمي (Metro Dashboard)")
+    st.caption("سجل التدقيق الرقابي ومؤشرات الأداء التراكمي للموظفين بطراز المربعات العصرية")
     st.write("---")
 
     init_audit_log_table(conn)
 
-    # 1. قسم سجل التدقيق الرقابي (Activity Log)
-    with st.container():
+    # تقسيم الواجهة إلى مربعين رئيسيين بجانب بعضهما
+    col1, col2 = st.columns(2)
+
+    with col1:
         st.markdown('''
-            <div style="background-color: #ffffff; padding: 15px; border-radius: 10px; border-right: 5px solid #1c4587; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 20px;">
-                <h4 style="margin:0; color: #1c4587;">🔍 1. سجل التدقيق الرقابي والمتابعة (Activity Log)</h4>
-                <p style="margin:5px 0 0 0; font-size: 13px; color: #666;">سجل تلقائي موثق لجميع عمليات التعديل، الحذف، والترحيل داخل النظام.</p>
+            <div style="background: linear-gradient(135deg, #ebf8ff 0%, #bee3f8 100%); padding: 20px; border-radius: 12px; border: 2px solid #90cdf4; text-align: center; height: 160px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between;">
+                <div>
+                    <h3 style="color: #2b6cb0; margin: 0 0 5px 0; font-size: 18px;">🔍 سجل التدقيق الرقابي</h3>
+                    <p style="color: #2c5282; font-size: 12px; margin: 0;">متابعة عمليات التعديل، الحذف والترحيل التلقائي.</p>
+                </div>
+                <div style="background-color: #ffffff; padding: 6px; border-radius: 6px; font-weight: bold; color: #2b6cb0; font-size: 12px;">
+                    عرض سجل الحركات النشطة
+                </div>
             </div>
         ''', unsafe_allow_html=True)
+        btn_tile_log = st.button("عرض سجل التدقيق", use_container_width=True, key="btn_g_1")
 
+    with col2:
+        st.markdown('''
+            <div style="background: linear-gradient(135deg, #f0fff4 0%, #c6f6d5 100%); padding: 20px; border-radius: 12px; border: 2px solid #9ae6b4; text-align: center; height: 160px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between;">
+                <div>
+                    <h3 style="color: #276749; margin: 0 0 5px 0; font-size: 18px;">📊 الأداء التراكمي للموظف</h3>
+                    <p style="color: #22543d; font-size: 12px; margin: 0;">تحليل تكرارات المطابقة والمخالفات ونسب الالتزام.</p>
+                </div>
+                <div style="background-color: #ffffff; padding: 6px; border-radius: 6px; font-weight: bold; color: #276749; font-size: 12px;">
+                    عرض بطاقة أداء الموظفين
+                </div>
+            </div>
+        ''', unsafe_allow_html=True)
+        btn_tile_score = st.button("عرض أداء الموظفين", use_container_width=True, key="btn_g_2")
+
+    st.write("---")
+
+    # التحكم بالتبديل التفاعلي بين المربعين
+    if btn_tile_log or "gov_active_tile" not in st.session_state:
+        st.session_state.gov_active_tile = 1
+
+    if btn_tile_score:
+        st.session_state.gov_active_tile = 2
+
+    # عرض محتوى المربع الأول: سجل التدقيق الرقابي
+    if st.session_state.gov_active_tile == 1:
+        st.markdown("#### 🔍 تفاصيل سجل التدقيق الرقابي والمتابعة (Activity Log)")
         df_logs = pd.read_sql_query("SELECT * FROM audit_activity_log ORDER BY id DESC LIMIT 100", conn)
         
         if df_logs.empty:
@@ -65,17 +84,9 @@ def show_governance_page(conn):
                 "details": "التفاصيل"
             }), use_container_width=True, hide_index=True)
 
-    st.write("---")
-
-    # 2. قسم بطاقة أداء الموظف التراكمية (Employee Scorecard)
-    with st.container():
-        st.markdown('''
-            <div style="background-color: #ffffff; padding: 15px; border-radius: 10px; border-right: 5px solid #2b6cb0; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 20px;">
-                <h4 style="margin:0; color: #2b6cb0;">📊 2. مؤشر الأداء التراكمي للموظف (Employee Scorecard)</h4>
-                <p style="margin:5px 0 0 0; font-size: 13px; color: #666;">تحليل تكرارات المطابقة والمخالفات لكل موظف وتقييم مستوى الالتزام الرقابي.</p>
-            </div>
-        ''', unsafe_allow_html=True)
-
+    # عرض محتوى المربع الثاني: مؤشر الأداء التراكمي للموظف
+    elif st.session_state.gov_active_tile == 2:
+        st.markdown("#### 📊 بطاقة أداء الموظف التراكمية (Employee Scorecard)")
         df_emp_list = pd.read_sql_query("SELECT DISTINCT employee_name FROM employees WHERE employee_name IS NOT NULL AND employee_name != ''", conn)
         
         if df_emp_list.empty:
