@@ -98,7 +98,6 @@ def init_db():
         )
     ''')
     
-    # جدول المستخدمين والصلاحيات (استبدل القديم بهذا)
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
@@ -108,7 +107,7 @@ def init_db():
         )
     ''')
     
-    # التأكد من وجود حساب ADMIN الأساسي دون مسح الحسابات الأخرى
+    # التأكد من وجود حساب ADMIN الأساسي دون مسح الحسابات الأخرى المضافة مسبقاً
     c.execute("INSERT OR IGNORE INTO users (username, password, role, full_name) VALUES (?, ?, ?, ?)", 
               ("ADMIN", "1234", "مشرف رئيسي", "مدير النظام"))
 
@@ -120,7 +119,6 @@ init_db()
 def get_db_connection():
     return sqlite3.connect('swiss_audit_system.db', check_same_thread=False)
 
-# دالة مزامنة بيانات الموظفين من Google Sheets
 def sync_employees_from_sheets():
     try:
         df_sheet = pd.read_csv(GOOGLE_SHEETS_CSV_URL)
@@ -165,7 +163,6 @@ def ar(text):
     except:
         return str(text)
 
-# دالة توليد تقرير PDF مع دعم القراءة المزدوجة للأعمدة
 def generate_pdf_report(df_data, report_title):
     font_path = "Amiri-Regular.ttf"
     if not os.path.exists(font_path):
@@ -249,7 +246,6 @@ def generate_pdf_report(df_data, report_title):
                      new_x="LMARGIN" if last else "RIGHT",
                      new_y="NEXT" if last else "TOP")
 
-    # إضافة التوقيع واسم المستخدم في أسفل التقرير رقمياً
     pdf.ln(15)
     if os.path.exists(font_path):
         pdf.set_font("Amiri", size=10)
@@ -262,7 +258,6 @@ def generate_pdf_report(df_data, report_title):
     
     return bytes(pdf.output())
 
-# دالة تلوين الحالة (أخضر لـ مطابق، أحمر لـ غير مطابق، وأزرق لـ مجاز)
 def color_status(val):
     if val == "مطابق":
         return 'background-color: #d4edda; color: #155724; font-weight: bold;'
@@ -272,11 +267,13 @@ def color_status(val):
         return 'background-color: #cce5ff; color: #004085; font-weight: bold;'
     return ''
 
-# حالة تسجيل الدخول
+# حالة جلسة المستخدم
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "username" not in st.session_state:
     st.session_state.username = ""
+if "role" not in st.session_state:
+    st.session_state.role = ""
 if "user_role" not in st.session_state:
     st.session_state.user_role = ""
 
@@ -309,6 +306,7 @@ def login_screen():
                 if user_record and user_record[0] == password_input.strip():
                     st.session_state.logged_in = True
                     st.session_state.username = username_input.strip()
+                    st.session_state.role = user_record[1]
                     st.session_state.user_role = user_record[1]
                     st.success("تم تسجيل الدخول بنجاح!")
                     st.rerun()
@@ -316,15 +314,14 @@ def login_screen():
                     st.error("اسم المستخدم أو كلمة المرور غير صحيحة")
 
 def main_app():
-with st.sidebar:
-        # شعار الشركة العلوي
+    with st.sidebar:
         logo_file = "LOGO-removebg-preview.png"
         if os.path.exists(logo_file):
             st.image(logo_file, width=150)
         
         st.write("---")
         
-        # بطاقة معلومات المستخدم والصلاحية
+        # بطاقة المستخدم بدون البطاقة المكررة
         st.markdown(f'''
             <div style="background-color: #f7fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px; font-size: 13px;">
                 <p style="margin: 0 0 5px 0;">👤 <b>المستخدم:</b> <span style="color: #2b6cb0;">{st.session_state.username}</span></p>
@@ -334,18 +331,22 @@ with st.sidebar:
         
         st.markdown("##### 🧭 قائمة التنقل الرئيسي")
         
-        # تحديد قائمة الصفحات حسب صلاحية المستخدم
-        if st.session_state.role == "مشرف رئيسي":
+        if st.session_state.role == "مشرف رئيسي" or st.session_state.role == "مشرف":
             pages = {
                 "🏠 لوحة المتابعة اليومية": "daily",
+                "📁 المطابقات الشهرية والترحيل": "archive",
+                "👥 إدارة الموظفين (Sheets)": "employees",
                 "📊 المؤشرات والتقارير الإحصائية": "reports",
                 "🛡️ الحوكمة والسجل الرقابي": "governance",
-                "👥 إدارة المستخدمين والصلاحيات": "users"
+                "🔐 تغيير كلمة المرور": "password",
+                "🔑 إدارة المستخدمين": "users"
             }
         else:
             pages = {
                 "🏠 لوحة المتابعة اليومية": "daily",
-                "📊 المؤشرات والتقارير الإحصائية": "reports"
+                "📁 المطابقات الشهرية والترحيل": "archive",
+                "📊 المؤشرات والتقارير الإحصائية": "reports",
+                "🔐 تغيير كلمة المرور": "password"
             }
         
         if "selected_page" not in st.session_state:
@@ -364,17 +365,20 @@ with st.sidebar:
             st.session_state.logged_in = False
             st.session_state.username = ""
             st.session_state.role = ""
+            st.session_state.user_role = ""
             st.rerun()
-    st.markdown('''
-        <div style="background-color: #ffffff; padding: 18px; border-radius: 12px; border-right: 6px solid #d9ea37; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px; text-align: center;">
-            <h2 style="color: #111111; margin: 0; font-size: 22px;">شركة سويس للصرافة | لوحة المتابعة والتدقيق اليومي للحركات</h2>
-            <p style="color: #666666; margin: 4px 0 0 0; font-size: 13px;">نظام إدارة المطابقات والتدقيق الميداني المستقل</p>
-        </div>
-    ''', unsafe_allow_html=True)
 
     conn = get_db_connection()
+    page = st.session_state.get("selected_page", "daily")
 
-    if menu == "📋 لوحة المتابعة والتدقيق اليومي":
+    if page == "daily":
+        st.markdown('''
+            <div style="background-color: #ffffff; padding: 18px; border-radius: 12px; border-right: 6px solid #d9ea37; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px; text-align: center;">
+                <h2 style="color: #111111; margin: 0; font-size: 22px;">شركة سويس للصرافة | لوحة المتابعة والتدقيق اليومي للحركات</h2>
+                <p style="color: #666666; margin: 4px 0 0 0; font-size: 13px;">نظام إدارة المطابقات والتدقيق الميداني المستقل</p>
+            </div>
+        ''', unsafe_allow_html=True)
+        
         st.subheader("📋 جدول المتابعة والتدقيق اليومي للحركات (مرتبط بالتاريخ والفرع)")
         
         selected_date = st.date_input("تاريخ التدقيق المطلوب", now_local().date())
@@ -498,7 +502,6 @@ with st.sidebar:
 
             st.success(f"⚡ يتم حفظ التعديلات تلقائياً لتاريخ ({date_str}) بشكل فوري ومستقل لكل فرع!")
 
-            # 🛑 صلاحية التنظيف الكامل حصرياً ليوزر ADMIN فقط (المشرف والمتقن محرومان منها)
             if st.session_state.username == "ADMIN":
                 with st.expander("🗑️ منطقة خطر: التنظيف الكامل لجدول التدقيق اليومي"):
                     st.error("⚠️ تحذير: هذا الإجراء سيقوم بحذف كافة السجلات اليومية في قاعدة البيانات نهائياً!")
@@ -539,7 +542,7 @@ with st.sidebar:
                             use_container_width=True
                         )
 
-    elif menu == "📁 المطابقات الشهرية والترحيل":
+    elif page == "archive":
         st.subheader("📁 أرشيف المطابقات الشهرية والترحيل والتقارير المتقدمة")
         st.caption("من هنا يمكنك ترحيل حركات اليوم (مع ترحيل الصناديق غير المدققة تلقائياً كـ 'مجاز'), استعراض الأرشيف، وتصدير التقارير.")
         
@@ -702,7 +705,6 @@ with st.sidebar:
                     st.success(f"✅ تم حذف سجل الصندوق ({r['box_no']}) في ({r['branch_name']}) لتاريخ ({del_date_str}).")
                     st.rerun()
 
-        # 🛑 صلاحية التنظيف الكامل حصرياً ليوزر ADMIN فقط
         if st.session_state.username == "ADMIN":
             with st.expander("🗑️ منطقة خطر: التنظيف الكامل لأرشيف المطابقات الشهرية"):
                 st.error("⚠️ تحذير: هذا الإجراء سيقوم بحذف كافة السجلات والأرشيف الشهري بالكامل وبشكل نهائي!")
@@ -714,7 +716,7 @@ with st.sidebar:
                     st.success("✅ تم تنظيف ومسح أرشيف المطابقات الشهرية بالكامل بنجاح!")
                     st.rerun()
 
-    elif menu == "👥 قاعدة بيانات الموظفين والصناديق (Google Sheets)":
+    elif page == "employees":
         st.subheader("👥 إدارة قاعدة بيانات الموظفين والصناديق والفروع")
         st.caption("البيانات مرتبطة تلقائياً وبشكل حي مع ملف Google Sheets الخاص بشركة سويس للصرافة.")
         
@@ -741,7 +743,7 @@ with st.sidebar:
                 "branch_no": "رقم الفرع"
             }), use_container_width=True)
 
-    elif menu == "🔐 تغيير كلمة المرور الشخصية":
+    elif page == "password":
         st.subheader("🔐 تغيير كلمة المرور الخاصة بحسابك")
         st.caption(f"أنت تقوم بتغيير كلمة المرور الخاصة بالمستخدم الحالي: `{st.session_state.username}`")
         
@@ -772,11 +774,10 @@ with st.sidebar:
                             log_activity(conn, st.session_state.username, "تغيير كلمة المرور", "تم تغيير كلمة المرور الشخصية بنجاح")
                             st.success("✅ تم تغيير كلمة المرور بنجاح! يرجى استخدامها عند تسجيل الدخول القادم.")
 
-    elif menu == "🔑 إدارة المستخدمين والصلاحيات":
+    elif page == "users":
         st.subheader("🔑 إدارة حسابات المدققين وصلاحيات الدخول")
         st.caption("إضافة حسابات جديدة، مراجعة كلمات المرور للموظفين، وتعديلها أو حذفها.")
         
-        # حماية صارمة: صفحة إدارة المستخدمين متاحة فقط ليوزر ADMIN
         if st.session_state.username != "ADMIN":
             st.error("⚠️ عذراً، هذه الصفحة مخصصة للمشرف الرئيسي (ADMIN) فقط.")
         else:
@@ -854,12 +855,11 @@ with st.sidebar:
                     "role": "الصلاحية"
                 }), use_container_width=True)
 
-    elif menu == "📊 المؤشرات والتقارير الإحصائية":
+    elif page == "reports":
         show_reports_page(conn)
 
-    elif menu == "🛡️ الحوكمة والسجل الرقابي":
-        # حماية صفحة الحوكمة لتكون متاحة لـ ADMIN أو المشرف فقط
-        if st.session_state.username == "ADMIN" or st.session_state.user_role == "مشرف":
+    elif page == "governance":
+        if st.session_state.username == "ADMIN" or st.session_state.role in ["مشرف", "مشرف رئيسي"]:
             show_governance_page(conn)
         else:
             st.error("⚠️ عذراً، هذه الصفحة غير متاحة لصلاحيتك.")
