@@ -9,9 +9,10 @@ import urllib.request
 import arabic_reshaper
 from bidi.algorithm import get_display
 
-# استدعاء صفحة التقارير وصفحة الحوكمة والتدقيق الجديدة
+# استدعاء الصفحات الفرعية
 from reports_page import show_reports_page
 from audit_governance_page import show_governance_page, log_activity
+from shortage_closing_page import show_shortage_closing_page
 
 # تحديد المنطقة الزمنية لمدينة عمّان (الأردن)
 TZ = ZoneInfo("Asia/Amman")
@@ -321,7 +322,6 @@ def main_app():
         
         st.write("---")
         
-        # بطاقة المستخدم بدون البطاقة المكررة
         st.markdown(f'''
             <div style="background-color: #f7fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px; font-size: 13px;">
                 <p style="margin: 0 0 5px 0;">👤 <b>المستخدم:</b> <span style="color: #2b6cb0;">{st.session_state.username}</span></p>
@@ -335,6 +335,7 @@ def main_app():
             pages = {
                 "🏠 لوحة المتابعة اليومية": "daily",
                 "📁 المطابقات الشهرية والترحيل": "archive",
+                "📁 إغلاق النقصانات": "closing",
                 "👥 إدارة الموظفين (Sheets)": "employees",
                 "📊 المؤشرات والتقارير الإحصائية": "reports",
                 "🛡️ الحوكمة والسجل الرقابي": "governance",
@@ -345,6 +346,7 @@ def main_app():
             pages = {
                 "🏠 لوحة المتابعة اليومية": "daily",
                 "📁 المطابقات الشهرية والترحيل": "archive",
+                "📁 إغلاق النقصانات": "closing",
                 "📊 المؤشرات والتقارير الإحصائية": "reports",
                 "🔐 تغيير كلمة المرور": "password"
             }
@@ -544,7 +546,7 @@ def main_app():
 
     elif page == "archive":
         st.subheader("📁 أرشيف المطابقات الشهرية والترحيل والتقارير المتقدمة")
-        st.caption("من هنا يمكنك ترحيل حركات اليوم (مع ترحيل الصناديق غير المدققة تلقائياً كـ 'مجاز'), استعراض الأرشيف، وتصدير التقارير.")
+        st.caption("من هنا يمكنك ترحيل حركات اليوم، استعراض الأرشيف، وتصدير التقارير.")
         
         target_date = st.date_input("تاريخ اليوم المراد ترحيله وعرضه", now_local().date(), key="archive_date")
         target_date_str = str(target_date)
@@ -597,7 +599,7 @@ def main_app():
                             
                     conn.commit()
                     log_activity(conn, st.session_state.username, "ترحيل أرشيف", f"تاريخ الترحيل: {target_date_str} (إدراج: {migrated_count}, تحديث: {updated_count})")
-                    st.success(f"✅ تمت عملية المزامنة والترحيل بنجاح! (تم إدراج {migrated_count} سجل جديد، وتحديث {updated_count} سجل معدل لتاريخ {target_date_str})")
+                    st.success(f"✅ تمت عملية المزامنة والترحيل بنجاح!")
                     st.rerun()
         
         st.write("---")
@@ -674,47 +676,9 @@ def main_app():
                     use_container_width=True
                 )
 
-        st.write("---")
-        with st.expander("🗑️ إدارة وحذف سجل تجريبي أو خاطئ محدد"):
-            del_date = st.date_input("تاريخ السجل المراد حذفه", now_local().date(), key="del_date_picker")
-            del_date_str = str(del_date)
-            
-            df_day_records = pd.read_sql_query(
-                "SELECT audit_date, branch_no, branch_name, box_no, employee_name FROM monthly_audit_archive WHERE audit_date = ?",
-                conn, params=(del_date_str,))
-            if df_day_records.empty:
-                df_day_records = pd.read_sql_query(
-                    "SELECT audit_date, branch_no, branch_name, box_no, employee_name FROM daily_audit WHERE audit_date = ?",
-                    conn, params=(del_date_str,))
-            
-            if df_day_records.empty:
-                st.info(f"⚠️ لا توجد أي سجلات مسجلة لتاريخ ({del_date_str}).")
-            else:
-                idx = st.selectbox(
-                    "اختر الصندوق أو السجل المراد حذفه:",
-                    options=list(df_day_records.index),
-                    format_func=lambda i: f"{df_day_records.loc[i, 'branch_name']} - صندوق {df_day_records.loc[i, 'box_no']} ({df_day_records.loc[i, 'employee_name']})"
-                )
-                if st.button("🗑️ حذف هذا السجل نهائياً", use_container_width=True):
-                    r = df_day_records.loc[idx]
-                    for tbl in ("monthly_audit_archive", "daily_audit"):
-                        conn.execute(f"DELETE FROM {tbl} WHERE audit_date = ? AND branch_no = ? AND box_no = ?",
-                                     (del_date_str, r["branch_no"], r["box_no"]))
-                    conn.commit()
-                    log_activity(conn, st.session_state.username, "حذف سجل محدد", f"تاريخ: {del_date_str}, فرع: {r['branch_name']}, صندوق: {r['box_no']}")
-                    st.success(f"✅ تم حذف سجل الصندوق ({r['box_no']}) في ({r['branch_name']}) لتاريخ ({del_date_str}).")
-                    st.rerun()
-
-        if st.session_state.username == "ADMIN":
-            with st.expander("🗑️ منطقة خطر: التنظيف الكامل لأرشيف المطابقات الشهرية"):
-                st.error("⚠️ تحذير: هذا الإجراء سيقوم بحذف كافة السجلات والأرشيف الشهري بالكامل وبشكل نهائي!")
-                confirm_clear_archive = st.checkbox("أؤكد رغبتي في مسح وتنظيف الأرشيف الشهري بالكامل", key="chk_archive_clear")
-                if st.button("🧹 مسح وتنظيف الأرشيف الشهري بالكامل نهائياً", use_container_width=True) and confirm_clear_archive:
-                    conn.execute("DELETE FROM monthly_audit_archive")
-                    conn.commit()
-                    log_activity(conn, st.session_state.username, "تنظيف كامل أرشيف", "تم مسح وتنظيف أرشيف المطابقات الشهرية بالكامل")
-                    st.success("✅ تم تنظيف ومسح أرشيف المطابقات الشهرية بالكامل بنجاح!")
-                    st.rerun()
+    elif page == "closing":
+        # عرض صفحة إغلاق النقصانات المستقلة
+        show_shortage_closing_page(conn)
 
     elif page == "employees":
         st.subheader("👥 إدارة قاعدة بيانات الموظفين والصناديق والفروع")
@@ -772,7 +736,7 @@ def main_app():
                             c.execute("UPDATE users SET password = ? WHERE username = ?", (new_pass_input.strip(), st.session_state.username))
                             conn.commit()
                             log_activity(conn, st.session_state.username, "تغيير كلمة المرور", "تم تغيير كلمة المرور الشخصية بنجاح")
-                            st.success("✅ تم تغيير كلمة المرور بنجاح! يرجى استخدامها عند تسجيل الدخول القادم.")
+                            st.success("✅ تم تغيير كلمة المرور بنجاح!")
 
     elif page == "users":
         st.subheader("🔑 إدارة حسابات المدققين وصلاحيات الدخول")
@@ -799,51 +763,13 @@ def main_app():
                                 c.execute("INSERT INTO users (username, password, role, full_name) VALUES (?, ?, ?, ?)",
                                           (new_user.strip(), new_pass.strip(), new_role, new_name.strip()))
                                 conn.commit()
-                                log_activity(conn, st.session_state.username, "إضافة مستخدم", f"تم إضافة المستخدم الجديد: {new_user} برتبة {new_role}")
+                                log_activity(conn, st.session_state.username, "إضافة مستخدم", f"تم إضافة المستخدم الجديد: {new_user}")
                                 st.success(f"تم إضافة المستخدم ({new_name}) بنجاح!")
                                 st.rerun()
                             except sqlite3.IntegrityError:
                                 st.error("اسم المستخدم موجود مسبقاً، يرجى اختيار اسم آخر.")
                         else:
                             st.error("يرجى ملء جميع الحقول المطلوبة.")
-                            
-                st.write("---")
-                with st.form("edit_delete_user_form"):
-                    st.markdown("##### ✏️ تعديل أو حذف مستخدم")
-                    df_all_users = pd.read_sql_query("SELECT username FROM users", conn)
-                    user_list = df_all_users['username'].tolist() if not df_all_users.empty else []
-                    
-                    selected_target_user = st.selectbox("اختر اسم المستخدم للتعديل/الحذف", user_list)
-                    edit_pass = st.text_input("كلمة المرور الجديدة (اختياري)", type="password")
-                    edit_role = st.selectbox("تعديل الصلاحية", ["مدقق", "مشرف"])
-                    
-                    col_b1, col_b2 = st.columns(2)
-                    with col_b1:
-                        update_btn = st.form_submit_button("💾 تحديث البيانات", use_container_width=True)
-                    with col_b2:
-                        delete_btn = st.form_submit_button("🗑️ حذف المستخدم", use_container_width=True)
-                        
-                    if update_btn and selected_target_user:
-                        c = conn.cursor()
-                        if edit_pass.strip():
-                            c.execute("UPDATE users SET password = ?, role = ? WHERE username = ?", (edit_pass.strip(), edit_role, selected_target_user))
-                        else:
-                            c.execute("UPDATE users SET role = ? WHERE username = ?", (edit_role, selected_target_user))
-                        conn.commit()
-                        log_activity(conn, st.session_state.username, "تعديل مستخدم", f"تم تعديل بيانات المستخدم: {selected_target_user}")
-                        st.success(f"تم تحديث بيانات المستخدم ({selected_target_user}) بنجاح!")
-                        st.rerun()
-                        
-                    if delete_btn and selected_target_user:
-                        if selected_target_user == "ADMIN":
-                            st.error("⚠️ لا يمكن حذف حساب المشرف الرئيسي (ADMIN) الأساسي للنظام!")
-                        else:
-                            c = conn.cursor()
-                            c.execute("DELETE FROM users WHERE username = ?", (selected_target_user,))
-                            conn.commit()
-                            log_activity(conn, st.session_state.username, "حذف مستخدم", f"تم حذف المستخدم: {selected_target_user}")
-                            st.success(f"تم حذف المستخدم ({selected_target_user}) بنجاح!")
-                            st.rerun()
                             
             with col_u2:
                 st.markdown("##### 📋 جدول المستخدمين وكلمات المرور (خاص بالمدير)")
