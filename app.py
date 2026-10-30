@@ -239,6 +239,17 @@ def generate_pdf_report(df_data, report_title):
             pdf.cell(w, 8, ar(v), border=1, align='C',
                      new_x="LMARGIN" if last else "RIGHT",
                      new_y="NEXT" if last else "TOP")
+
+    # إضافة التوقيع واسم المستخدم في أسفل التقرير رقمياً
+    pdf.ln(15)
+    if os.path.exists(font_path):
+        pdf.set_font("Amiri", size=10)
+    else:
+        pdf.set_font("Arial", size=10)
+        
+    current_user = st.session_state.get("username", "ADMIN")
+    sign_text = f"تم التدقيق والاعتماد الرقمي بواسطة المستخدم: {current_user} - بتاريخ: {now_local().strftime('%Y-%m-%d %I:%M:%S %p')}"
+    pdf.cell(190, 8, text=ar(sign_text), new_x="LMARGIN", new_y="NEXT", align='R')
     
     return bytes(pdf.output())
 
