@@ -348,11 +348,9 @@ with st.sidebar:
                 "📊 المؤشرات والتقارير الإحصائية": "reports"
             }
         
-        # استخدام نظام التخزين المؤقت لتتبع الصفحة النشطة عبر الأزرار
         if "selected_page" not in st.session_state:
             st.session_state.selected_page = "daily"
 
-        # أزرار التنقل الجانبية العصرية (بديل القائمة المنسدلة)
         for page_name, page_key in pages.items():
             is_active = st.session_state.selected_page == page_key
             btn_type = "primary" if is_active else "secondary"
@@ -367,7 +365,6 @@ with st.sidebar:
             st.session_state.username = ""
             st.session_state.role = ""
             st.rerun()
-
     st.markdown('''
         <div style="background-color: #ffffff; padding: 18px; border-radius: 12px; border-right: 6px solid #d9ea37; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px; text-align: center;">
             <h2 style="color: #111111; margin: 0; font-size: 22px;">شركة سويس للصرافة | لوحة المتابعة والتدقيق اليومي للحركات</h2>
